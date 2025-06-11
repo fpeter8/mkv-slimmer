@@ -1,0 +1,318 @@
+use anyhow::Result;
+use colored::*;
+use std::collections::HashMap;
+use tabled::{Table, Tabled, settings::Style};
+
+use crate::config::Config;
+use crate::models::{StreamInfo, StreamType};
+use crate::utils::format_size;
+
+#[derive(Tabled)]
+struct VideoStreamRow {
+    #[tabled(rename = "#")]
+    index: String,
+    #[tabled(rename = "Codec")]
+    codec: String,
+    #[tabled(rename = "Resolution")]
+    resolution: String,
+    #[tabled(rename = "FPS")]
+    fps: String,
+    #[tabled(rename = "HDR")]
+    hdr: String,
+    #[tabled(rename = "Size")]
+    size: String,
+    #[tabled(rename = "Status")]
+    status: String,
+}
+
+#[derive(Tabled)]
+struct AudioStreamRow {
+    #[tabled(rename = "#")]
+    index: String,
+    #[tabled(rename = "Codec")]
+    codec: String,
+    #[tabled(rename = "Language")]
+    language: String,
+    #[tabled(rename = "Channels")]
+    channels: String,
+    #[tabled(rename = "Sample Rate")]
+    sample_rate: String,
+    #[tabled(rename = "Size")]
+    size: String,
+    #[tabled(rename = "Default")]
+    default: String,
+    #[tabled(rename = "Status")]
+    status: String,
+}
+
+#[derive(Tabled)]
+struct SubtitleStreamRow {
+    #[tabled(rename = "#")]
+    index: String,
+    #[tabled(rename = "Format")]
+    format: String,
+    #[tabled(rename = "Language")]
+    language: String,
+    #[tabled(rename = "Title")]
+    title: String,
+    #[tabled(rename = "Default")]
+    default: String,
+    #[tabled(rename = "Forced")]
+    forced: String,
+    #[tabled(rename = "Status")]
+    status: String,
+}
+
+#[derive(Tabled)]
+struct AttachmentStreamRow {
+    #[tabled(rename = "#")]
+    index: String,
+    #[tabled(rename = "Type")]
+    attachment_type: String,
+    #[tabled(rename = "Title")]
+    title: String,
+    #[tabled(rename = "Size")]
+    size: String,
+}
+
+pub struct StreamDisplayer<'a> {
+    streams: &'a [StreamInfo],
+    config: &'a Config,
+    grouped_streams: HashMap<StreamType, Vec<&'a StreamInfo>>,
+}
+
+impl<'a> StreamDisplayer<'a> {
+    pub fn new(streams: &'a [StreamInfo], config: &'a Config) -> Self {
+        let mut grouped_streams = HashMap::new();
+        
+        for stream in streams {
+            grouped_streams
+                .entry(stream.stream_type.clone())
+                .or_insert_with(Vec::new)
+                .push(stream);
+        }
+        
+        Self {
+            streams,
+            config,
+            grouped_streams,
+        }
+    }
+    
+    pub fn display(&self) -> Result<()> {
+        // Display video streams
+        if let Some(streams) = self.grouped_streams.get(&StreamType::Video) {
+            self.display_video_streams(streams)?;
+        }
+        
+        // Display audio streams
+        if let Some(streams) = self.grouped_streams.get(&StreamType::Audio) {
+            self.display_audio_streams(streams)?;
+        }
+        
+        // Display subtitle streams
+        if let Some(streams) = self.grouped_streams.get(&StreamType::Subtitle) {
+            self.display_subtitle_streams(streams)?;
+        }
+        
+        // Display attachments
+        if let Some(streams) = self.grouped_streams.get(&StreamType::Attachment) {
+            self.display_attachment_streams(streams)?;
+        }
+        
+        // Display summary
+        self.display_summary()?;
+        
+        Ok(())
+    }
+    
+    fn display_video_streams(&self, streams: &[&StreamInfo]) -> Result<()> {
+        println!("\n{}", "🎬 Video Streams:".bold().cyan());
+        
+        let rows: Vec<VideoStreamRow> = streams
+            .iter()
+            .map(|stream| VideoStreamRow {
+                index: stream.index.to_string(),
+                codec: stream.codec.clone(),
+                resolution: stream.resolution.clone().unwrap_or_else(|| "?".to_string()),
+                fps: stream.framerate
+                    .map(|f| format!("{:.2}", f))
+                    .unwrap_or_else(|| "?".to_string()),
+                hdr: stream.hdr
+                    .map(|h| if h { "Yes" } else { "No" }.to_string())
+                    .unwrap_or_else(|| "No".to_string()),
+                size: stream.size_mb()
+                    .map(|s| format!("{:.1} MB", s))
+                    .unwrap_or_else(|| "?".to_string()),
+                status: self.get_stream_status(stream),
+            })
+            .collect();
+        
+        let table = Table::new(rows)
+            .with(Style::rounded())
+            .to_string();
+        
+        println!("{}", table);
+        Ok(())
+    }
+    
+    fn display_audio_streams(&self, streams: &[&StreamInfo]) -> Result<()> {
+        println!("\n{}", "🎵 Audio Streams:".bold().cyan());
+        
+        let rows: Vec<AudioStreamRow> = streams
+            .iter()
+            .map(|stream| AudioStreamRow {
+                index: stream.index.to_string(),
+                codec: stream.codec.clone(),
+                language: self.format_language(&stream.language),
+                channels: stream.channels
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "?".to_string()),
+                sample_rate: stream.sample_rate
+                    .map(|sr| format!("{} Hz", sr))
+                    .unwrap_or_else(|| "?".to_string()),
+                size: stream.size_mb()
+                    .map(|s| format!("{:.1} MB", s))
+                    .unwrap_or_else(|| "?".to_string()),
+                default: if stream.default { "Yes" } else { "No" }.to_string(),
+                status: self.get_stream_status(stream),
+            })
+            .collect();
+        
+        let table = Table::new(rows)
+            .with(Style::rounded())
+            .to_string();
+        
+        println!("{}", table);
+        Ok(())
+    }
+    
+    fn display_subtitle_streams(&self, streams: &[&StreamInfo]) -> Result<()> {
+        println!("\n{}", "📄 Subtitle Streams:".bold().cyan());
+        
+        let rows: Vec<SubtitleStreamRow> = streams
+            .iter()
+            .map(|stream| SubtitleStreamRow {
+                index: stream.index.to_string(),
+                format: stream.subtitle_format.clone()
+                    .or_else(|| Some(stream.codec.clone()))
+                    .unwrap_or_else(|| "unknown".to_string()),
+                language: self.format_language(&stream.language),
+                title: stream.title.clone().unwrap_or_else(|| "".to_string()),
+                default: if stream.default { "Yes" } else { "No" }.to_string(),
+                forced: if stream.forced { "Yes" } else { "No" }.to_string(),
+                status: self.get_stream_status(stream),
+            })
+            .collect();
+        
+        let table = Table::new(rows)
+            .with(Style::rounded())
+            .to_string();
+        
+        println!("{}", table);
+        Ok(())
+    }
+    
+    fn display_attachment_streams(&self, streams: &[&StreamInfo]) -> Result<()> {
+        println!("\n{}", "📎 Attachments:".bold().cyan());
+        
+        let rows: Vec<AttachmentStreamRow> = streams
+            .iter()
+            .map(|stream| AttachmentStreamRow {
+                index: stream.index.to_string(),
+                attachment_type: stream.codec.clone(),
+                title: stream.title.clone().unwrap_or_else(|| "".to_string()),
+                size: stream.size_mb()
+                    .map(|s| format!("{:.1} MB", s))
+                    .unwrap_or_else(|| "?".to_string()),
+            })
+            .collect();
+        
+        let table = Table::new(rows)
+            .with(Style::rounded())
+            .to_string();
+        
+        println!("{}", table);
+        Ok(())
+    }
+    
+    fn get_stream_status(&self, stream: &StreamInfo) -> String {
+        match stream.stream_type {
+            StreamType::Video => {
+                // Keep all video streams for now
+                "KEEP".green().to_string()
+            }
+            StreamType::Audio => {
+                if let Some(ref lang) = stream.language {
+                    if self.config.audio.keep_languages.contains(lang) {
+                        "KEEP".green().to_string()
+                    } else if stream.default {
+                        "KEEP (default)".yellow().to_string()
+                    } else {
+                        "REMOVE".red().to_string()
+                    }
+                } else if stream.default {
+                    "KEEP (default)".yellow().to_string()
+                } else {
+                    "REMOVE".red().to_string()
+                }
+            }
+            StreamType::Subtitle => {
+                if self.config.subtitles.forced_only && !stream.forced {
+                    "REMOVE".red().to_string()
+                } else if let Some(ref lang) = stream.language {
+                    if self.config.subtitles.keep_languages.contains(lang) {
+                        "KEEP".green().to_string()
+                    } else if stream.forced {
+                        "KEEP (forced)".yellow().to_string()
+                    } else {
+                        "REMOVE".red().to_string()
+                    }
+                } else if stream.forced {
+                    "KEEP (forced)".yellow().to_string()
+                } else {
+                    "REMOVE".red().to_string()
+                }
+            }
+            _ => "UNKNOWN".dimmed().to_string(),
+        }
+    }
+    
+    fn format_language(&self, language: &Option<String>) -> String {
+        language.clone().unwrap_or_else(|| "none".dimmed().to_string())
+    }
+    
+    fn display_summary(&self) -> Result<()> {
+        println!("\n{}", "📊 Summary:".bold());
+        
+        let total_size: u64 = self.streams.iter()
+            .filter_map(|s| s.size_bytes)
+            .sum();
+        
+        let mut keep_size = 0u64;
+        let mut remove_count = 0;
+        
+        for stream in self.streams {
+            let status = self.get_stream_status(stream);
+            if !status.contains("REMOVE") {
+                keep_size += stream.size_bytes.unwrap_or(0);
+            } else {
+                remove_count += 1;
+            }
+        }
+        
+        if total_size > 0 {
+            let savings = total_size - keep_size;
+            let savings_pct = (savings as f64 / total_size as f64) * 100.0;
+            
+            println!("Original size: {}", format_size(total_size));
+            println!("After processing: {}", format_size(keep_size));
+            println!("Space savings: {} ({:.1}%)", format_size(savings), savings_pct);
+            println!("Streams to remove: {}", remove_count);
+        } else {
+            println!("Unable to calculate size information");
+        }
+        
+        Ok(())
+    }
+}
