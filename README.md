@@ -7,10 +7,12 @@ A fast, safe Rust tool to analyze and remove unnecessary streams from MKV files 
 - 🚀 **Fast & Safe** - Written in Rust for performance and memory safety
 - 📊 **Detailed Analysis** - Display comprehensive stream information with beautiful tables
 - 🌍 **Language Filtering** - Filter audio and subtitle tracks by language codes (ordered by preference)
+- ✂️ **Stream Removal** - Remove unwanted streams using mkvmerge with proper error handling
+- ⚡ **Smart Optimization** - Automatically detects when processing is unnecessary and uses hardlinking/copying instead
+- 🎯 **Default Flag Management** - Properly sets default flags based on language preferences (only one default per type)
 - ⚙️ **Simplified Configuration** - Easy YAML configuration with language preferences
 - 🔍 **Dry-run Mode** - Preview changes without modifying files
 - 🎨 **Rich Output** - Colored terminal output with emojis and formatted tables
-- 🎯 **Smart Default Selection** - First available language from preference list becomes default
 - 🛡️ **Stream Protection** - Prevents removal of all audio streams, warns about subtitle removal
 - 📎 **Attachment Preservation** - All video and attachment streams are always kept
 
@@ -19,7 +21,7 @@ A fast, safe Rust tool to analyze and remove unnecessary streams from MKV files 
 ### Prerequisites
 - Rust (1.70 or later)
 - ffprobe (from FFmpeg) - for detailed stream information
-- mkvmerge (from MKVToolNix) - for file modifications
+- mkvmerge (from MKVToolNix) - **required** for stream removal and modifications
 
 ### Build from source
 ```bash
@@ -38,23 +40,27 @@ cargo run -- --help
 
 ### Basic usage
 ```bash
-# Analyze MKV file with default settings
-cargo run -- movie.mkv
+# Process MKV file and output to specified directory
+cargo run -- movie.mkv /path/to/output/directory
 
 # Or using the compiled binary
-./target/release/mkv-slimmer movie.mkv
+./target/release/mkv-slimmer movie.mkv /path/to/output/directory
 ```
 
 ### Advanced usage
 ```bash
 # Keep only English and Japanese audio, English subtitles
-cargo run -- movie.mkv -a eng -a jpn -s eng
+cargo run -- movie.mkv /output/dir -a eng -a jpn -s eng
 
-# Dry run with custom config
-cargo run -- movie.mkv -n -c custom-settings.yaml
+# Dry run with custom config (preview changes without modifying)
+cargo run -- movie.mkv /output/dir -n -c custom-settings.yaml
 
 # Keep Spanish and Japanese audio (Spanish will be default as it's listed first)
-cargo run -- movie.mkv -a spa -a jpn -n
+cargo run -- movie.mkv /output/dir -a spa -a jpn
+
+# Smart optimization: if all streams are kept and defaults are correct, 
+# the tool will hardlink/copy instead of using mkvmerge
+cargo run -- movie.mkv /output/dir -a eng -a jpn -a spa -s eng -s jpn
 ```
 
 ## Configuration
@@ -83,11 +89,6 @@ subtitles:
 
 # Note: Video and attachment streams are always kept
 
-# Output preferences  
-output:
-  suffix: "_slimmed"
-  overwrite: false
-
 # Processing options
 processing:
   dry_run: false
@@ -103,6 +104,7 @@ processing:
 ## CLI Options
 
 - `<MKV_FILE>` - Path to the MKV file to analyze (required)
+- `<TARGET_DIRECTORY>` - Directory where the modified MKV will be created (required)
 - `-a, --audio-languages <LANG>` - Languages to keep for audio tracks (ordered by preference, can be specified multiple times)
 - `-s, --subtitle-languages <LANG>` - Languages to keep for subtitle tracks (ordered by preference, can be specified multiple times)
 - `-n, --dry-run` - Show what would be removed without modifying
@@ -114,7 +116,7 @@ processing:
 
 ### Runtime Dependencies
 - **ffprobe** (from FFmpeg) - For detailed stream information
-- **mkvmerge** (from MKVToolNix) - For file modifications
+- **mkvmerge** (from MKVToolNix) - **Required** for stream removal and default flag modifications
 
 ### Rust Crates
 - `clap` - Command-line argument parsing
@@ -141,8 +143,10 @@ Error: All audio streams would be removed. Audio languages to keep: [fre, ger], 
 
 ## Example Output
 
+### Stream Removal Example:
 ```
 📁 Analyzing: movie.mkv
+📂 Target directory: /output/directory
 🎵 Audio languages (ordered by preference): eng, jpn
 📄 Subtitle languages (ordered by preference): eng, spa
 
@@ -162,26 +166,37 @@ Error: All audio streams would be removed. Audio languages to keep: [fre, ger], 
 │ 3 │ ac3   │ spa      │ 6        │ 48000 Hz    │ 645M │ No      │ REMOVE         │
 ╰───┴───────┴──────────┴──────────┴─────────────┴──────┴─────────┴────────────────╯
 
-📄 Subtitle Streams:
-╭───┬────────┬──────────┬───────────────┬─────────┬────────┬────────────────╮
-│ # │ Format │ Language │ Title         │ Default │ Forced │ Status         │
-├───┼────────┼──────────┼───────────────┼─────────┼────────┼────────────────┤
-│ 3 │ srt    │ eng      │               │ Yes     │ No     │ KEEP (default) │
-│ 4 │ srt    │ spa      │ Signs & Songs │ No      │ No     │ KEEP           │
-│ 5 │ ass    │ fre      │ Dialogue      │ No      │ No     │ REMOVE         │
-╰───┴────────┴──────────┴───────────────┴─────────┴────────┴────────────────╯
-
-📎 Attachments:
-Attachment Summary:
-  TrueType Font files: 8
-  PNG Image files: 2
-  Unknown File files: 3
-
 📊 Summary:
 Original size: 3.2 GB
 After processing: 2.1 GB  
 Space savings: 1.1 GB (34.4%)
-Streams to remove: 2
+Streams to remove: 1
+
+🎬 Processing streams...
+🎯 Keeping 2 stream(s): #0, #1, #2
+🔄 Running mkvmerge to create: /output/directory/movie.mkv
+📁 Output file: /output/directory/movie.mkv
+📊 Original size: 3.2 GB
+📊 New size: 2.1 GB
+💾 Space saved: 1.1 GB (34.4%)
+✅ Stream processing completed successfully!
+```
+
+### Smart Optimization Example:
+```
+📁 Analyzing: movie.mkv
+📂 Target directory: /output/directory  
+🎵 Audio languages (ordered by preference): eng, jpn, spa
+📄 Subtitle languages (ordered by preference): eng, spa
+
+🎬 Processing streams...
+🎯 Keeping 4 stream(s): #0, #1, #2, #3
+✨ No stream processing needed - linking/copying file instead
+🔗 Hard linked to: /output/directory/movie.mkv
+📁 Output file: /output/directory/movie.mkv
+📊 File size: 3.2 GB
+💾 Space saved: 0 B (0.0%) - no processing required
+✅ Stream processing completed successfully!
 ```
 
 ## Development Status
@@ -190,14 +205,17 @@ Streams to remove: 2
 - ✅ **Language Filtering** - Full support for audio/subtitle filtering  
 - ✅ **Configuration System** - Three-layer config with validation
 - ✅ **Beautiful Output** - Formatted tables with colors and emojis
-- 🚧 **Stream Removal** - Planned for future releases
+- ✅ **Stream Removal** - Complete with mkvmerge integration and error handling
+- ✅ **Smart Optimization** - Automatic detection and hardlinking/copying when no processing needed
+- ✅ **Default Flag Management** - Proper setting of default flags based on language preferences
 - 🚧 **Batch Processing** - Multiple files support
 - 🚧 **GUI Interface** - Desktop application
 
 ## Performance
 
-The Rust implementation provides significant performance improvements over the previous Python version:
+The Rust implementation provides significant performance improvements:
 - 🚀 **Faster startup** - No interpreter overhead
 - 💾 **Lower memory usage** - Efficient memory management
 - 🛡️ **Memory safety** - Zero-cost abstractions without runtime panics
-- ⚡ **Concurrent processing** - Built-in async support for future features
+- ⚡ **Smart optimization** - Automatic hardlinking/copying when no processing needed (instant operation)
+- 🔧 **Efficient mkvmerge usage** - Only processes when necessary, with proper stream selection and default flag management

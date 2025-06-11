@@ -19,33 +19,17 @@ impl Default for AudioConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubtitleConfig {
     pub keep_languages: Vec<String>,
-    pub forced_only: bool,
 }
 
 impl Default for SubtitleConfig {
     fn default() -> Self {
         Self {
             keep_languages: vec!["eng".to_string(), "spa".to_string()],
-            forced_only: false,
         }
     }
 }
 
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OutputConfig {
-    pub suffix: String,
-    pub overwrite: bool,
-}
-
-impl Default for OutputConfig {
-    fn default() -> Self {
-        Self {
-            suffix: "_slimmed".to_string(),
-            overwrite: false,
-        }
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProcessingConfig {
@@ -62,7 +46,6 @@ impl Default for ProcessingConfig {
 pub struct Config {
     pub audio: AudioConfig,
     pub subtitles: SubtitleConfig,
-    pub output: OutputConfig,
     pub processing: ProcessingConfig,
 }
 
@@ -71,7 +54,6 @@ impl Default for Config {
         Self {
             audio: AudioConfig::default(),
             subtitles: SubtitleConfig::default(),
-            output: OutputConfig::default(),
             processing: ProcessingConfig::default(),
         }
     }
@@ -175,4 +157,3 @@ impl Config {
         Ok(())
     }
 }
-

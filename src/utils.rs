@@ -1,8 +1,10 @@
 use anyhow::{Context, Result};
 use std::path::Path;
+use crate::config::Config;
+use crate::models::{StreamInfo, StreamType};
 
 /// Check for required external dependencies
-pub fn check_dependencies() -> Vec<String> {
+pub fn check_dependencies() -> Result<Vec<String>> {
     let mut missing = Vec::new();
     
     // Check for ffprobe (optional but recommended)
@@ -12,10 +14,13 @@ pub fn check_dependencies() -> Vec<String> {
     
     // Check for mkvmerge (required for actual modifications)
     if which::which("mkvmerge").is_err() {
-        missing.push("mkvmerge".to_string());
+        return Err(anyhow::anyhow!(
+            "mkvmerge is not available. Please install MKVToolNix to process MKV files.\n\
+            Visit: https://mkvtoolnix.download/"
+        ));
     }
     
-    missing
+    Ok(missing)
 }
 
 /// Validate that the file is a valid MKV file
@@ -72,3 +77,67 @@ pub fn format_size(size_bytes: u64) -> String {
     format!("{:.1} {}", size_value, SIZE_UNITS[current_unit_index])
 }
 
+/// Validate that we're not removing all streams of critical types
+pub fn validate_stream_removal(streams: &[StreamInfo], config: &Config) -> Result<()> {
+    // Group streams by type
+    let audio_streams: Vec<&StreamInfo> = streams
+        .iter()
+        .filter(|s| s.stream_type == StreamType::Audio)
+        .collect();
+    
+    let subtitle_streams: Vec<&StreamInfo> = streams
+        .iter()
+        .filter(|s| s.stream_type == StreamType::Subtitle)
+        .collect();
+    
+    // Check audio streams - fail if all would be removed
+    if !audio_streams.is_empty() {
+        let keep_count = audio_streams.iter()
+            .filter(|stream| {
+                if let Some(ref lang) = stream.language {
+                    config.audio.keep_languages.contains(lang)
+                } else {
+                    false
+                }
+            })
+            .count();
+        
+        if keep_count == 0 {
+            return Err(anyhow::anyhow!(
+                "All audio streams would be removed. Audio languages to keep: [{}], but available languages are: [{}]",
+                config.audio.keep_languages.join(", "),
+                audio_streams.iter()
+                    .filter_map(|s| s.language.as_ref().map(|lang| lang.as_str()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+    }
+    
+    // Check subtitle streams - warn if all would be removed
+    if !subtitle_streams.is_empty() {
+        let keep_count = subtitle_streams.iter()
+            .filter(|stream| {
+                if let Some(ref lang) = stream.language {
+                    config.subtitles.keep_languages.contains(lang)
+                } else if stream.forced {
+                    true // Keep forced subtitles even without language
+                } else {
+                    false
+                }
+            })
+            .count();
+        
+        if keep_count == 0 {
+            eprintln!("⚠️  Warning: All subtitle streams would be removed. Subtitle languages to keep: [{}], but available languages are: [{}]",
+                config.subtitles.keep_languages.join(", "),
+                subtitle_streams.iter()
+                    .filter_map(|s| s.language.as_ref().map(|lang| lang.as_str()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+    }
+    
+    Ok(())
+}

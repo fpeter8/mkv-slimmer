@@ -133,61 +133,6 @@ impl<'a> StreamDisplayer<'a> {
         None
     }
     
-    /// Validate that we're not removing all streams of critical types
-    fn validate_stream_removal(&self) -> Result<()> {
-        // Check audio streams - fail if all would be removed
-        if let Some(audio_streams) = self.grouped_streams.get(&StreamType::Audio) {
-            let keep_count = audio_streams.iter()
-                .filter(|stream| {
-                    if let Some(ref lang) = stream.language {
-                        self.config.audio.keep_languages.contains(lang)
-                    } else {
-                        false
-                    }
-                })
-                .count();
-            
-            if keep_count == 0 {
-                return Err(anyhow::anyhow!(
-                    "Error: All audio streams would be removed. Audio languages to keep: [{}], but available languages are: [{}]",
-                    self.config.audio.keep_languages.join(", "),
-                    audio_streams.iter()
-                        .filter_map(|s| s.language.as_ref().map(|lang| lang.as_str()))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ));
-            }
-        }
-        
-        // Check subtitle streams - warn if all would be removed
-        if let Some(subtitle_streams) = self.grouped_streams.get(&StreamType::Subtitle) {
-            let keep_count = subtitle_streams.iter()
-                .filter(|stream| {
-                    if self.config.subtitles.forced_only && !stream.forced {
-                        false
-                    } else if let Some(ref lang) = stream.language {
-                        self.config.subtitles.keep_languages.contains(lang)
-                    } else if stream.forced {
-                        true // Keep forced subtitles even without language
-                    } else {
-                        false
-                    }
-                })
-                .count();
-            
-            if keep_count == 0 {
-                eprintln!("⚠️  Warning: All subtitle streams would be removed. Subtitle languages to keep: [{}], but available languages are: [{}]",
-                    self.config.subtitles.keep_languages.join(", "),
-                    subtitle_streams.iter()
-                        .filter_map(|s| s.language.as_ref().map(|lang| lang.as_str()))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                );
-            }
-        }
-        
-        Ok(())
-    }
     
     pub fn display(&self) -> Result<()> {
         // Display video streams
@@ -209,9 +154,6 @@ impl<'a> StreamDisplayer<'a> {
         if let Some(streams) = self.grouped_streams.get(&StreamType::Attachment) {
             self.display_attachment_streams(streams)?;
         }
-        
-        // Validate stream removal after displaying stream info but before processing
-        self.validate_stream_removal()?;
         
         // Display summary
         self.display_summary()?;
@@ -406,9 +348,7 @@ impl<'a> StreamDisplayer<'a> {
                 }
             }
             StreamType::Subtitle => {
-                if self.config.subtitles.forced_only && !stream.forced {
-                    "REMOVE".red().to_string()
-                } else if let Some(ref lang) = stream.language {
+                if let Some(ref lang) = stream.language {
                     if self.config.subtitles.keep_languages.contains(lang) {
                         let mut status_parts = Vec::new();
                         

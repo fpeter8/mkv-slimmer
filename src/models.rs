@@ -70,5 +70,4 @@ impl StreamInfo {
     pub fn size_mb(&self) -> Option<f64> {
         self.size_bytes.map(|bytes| bytes as f64 / (1024.0 * 1024.0))
     }
-    
 }

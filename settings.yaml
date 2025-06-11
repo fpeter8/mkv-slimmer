@@ -12,14 +12,6 @@ subtitles:
     - und    # Undefined (second preference)
     - eng    # English (third preference)
     - jpn    # Japanese (fourth preference)
-  forced_only: false     # Keep all matching languages, not just forced
-
-# Note: Video and attachment streams are always kept
-
-# Output preferences  
-output:
-  suffix: "_slimmed"
-  overwrite: false
 
 # Processing options
 processing:
