@@ -6,14 +6,12 @@ use dialoguer::MultiSelect;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioConfig {
     pub keep_languages: Vec<String>,
-    pub default_language: Option<String>,
 }
 
 impl Default for AudioConfig {
     fn default() -> Self {
         Self {
             keep_languages: vec!["eng".to_string(), "jpn".to_string(), "und".to_string()],
-            default_language: Some("eng".to_string()),
         }
     }
 }
@@ -21,7 +19,6 @@ impl Default for AudioConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubtitleConfig {
     pub keep_languages: Vec<String>,
-    pub default_language: Option<String>,
     pub forced_only: bool,
 }
 
@@ -29,22 +26,11 @@ impl Default for SubtitleConfig {
     fn default() -> Self {
         Self {
             keep_languages: vec!["eng".to_string(), "spa".to_string()],
-            default_language: Some("eng".to_string()),
             forced_only: false,
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VideoConfig {
-    pub keep_all: bool,
-}
-
-impl Default for VideoConfig {
-    fn default() -> Self {
-        Self { keep_all: true }
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OutputConfig {
@@ -76,7 +62,6 @@ impl Default for ProcessingConfig {
 pub struct Config {
     pub audio: AudioConfig,
     pub subtitles: SubtitleConfig,
-    pub video: VideoConfig,
     pub output: OutputConfig,
     pub processing: ProcessingConfig,
 }
@@ -86,7 +71,6 @@ impl Default for Config {
         Self {
             audio: AudioConfig::default(),
             subtitles: SubtitleConfig::default(),
-            video: VideoConfig::default(),
             output: OutputConfig::default(),
             processing: ProcessingConfig::default(),
         }
@@ -111,6 +95,9 @@ impl Config {
         let config: Config = serde_yaml::from_str(&content)
             .with_context(|| format!("Failed to parse config file: {}", path.display()))?;
         
+        // Validate configuration
+        config.validate()?;
+        
         Ok(config)
     }
     
@@ -118,8 +105,6 @@ impl Config {
         &mut self,
         audio_languages: Option<Vec<String>>,
         subtitle_languages: Option<Vec<String>>,
-        default_audio_language: Option<String>,
-        default_subtitle_language: Option<String>,
         dry_run: bool,
     ) {
         // Audio languages
@@ -132,18 +117,15 @@ impl Config {
             self.subtitles.keep_languages = langs;
         }
         
-        // Default languages
-        if let Some(lang) = default_audio_language {
-            self.audio.default_language = Some(lang);
-        }
-        
-        if let Some(lang) = default_subtitle_language {
-            self.subtitles.default_language = Some(lang);
-        }
-        
         // Processing options
         if dry_run {
             self.processing.dry_run = true;
+        }
+        
+        // Validate configuration after CLI merge
+        if let Err(e) = self.validate() {
+            eprintln!("Error: Configuration validation failed: {}", e);
+            std::process::exit(1);
         }
     }
     
@@ -183,6 +165,13 @@ impl Config {
                 .collect();
         }
         
+        Ok(())
+    }
+    
+    /// Validate configuration - currently no specific validations needed
+    pub fn validate(&self) -> Result<()> {
+        // No specific validation needed since default languages are removed
+        // and video/attachment streams are always kept
         Ok(())
     }
 }

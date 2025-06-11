@@ -47,20 +47,6 @@ pub async fn run() -> Result<()> {
                 .default_value("settings.yaml")
                 .value_parser(clap::value_parser!(PathBuf))
         )
-        .arg(
-            Arg::new("default_audio_language")
-                .short('d')
-                .long("default-audio-language")
-                .help("Set default audio track by language")
-                .value_name("LANG")
-        )
-        .arg(
-            Arg::new("default_subtitle_language")
-                .short('t')
-                .long("default-subtitle-language")
-                .help("Set default subtitle track by language")
-                .value_name("LANG")
-        )
         .get_matches();
 
     let mkv_file = matches.get_one::<PathBuf>("mkv_file").unwrap();
@@ -75,13 +61,6 @@ pub async fn run() -> Result<()> {
         .get_many::<String>("subtitle_languages")
         .map(|values| values.cloned().collect());
     
-    let default_audio_language = matches
-        .get_one::<String>("default_audio_language")
-        .cloned();
-    
-    let default_subtitle_language = matches
-        .get_one::<String>("default_subtitle_language")
-        .cloned();
 
     // Check dependencies
     let missing_deps = check_dependencies();
@@ -101,8 +80,6 @@ pub async fn run() -> Result<()> {
     config.merge_cli_args(
         audio_languages,
         subtitle_languages,
-        default_audio_language,
-        default_subtitle_language,
         dry_run,
     );
 
@@ -116,15 +93,8 @@ pub async fn run() -> Result<()> {
     }
 
     println!("📁 Analyzing: {}", mkv_file.display());
-    println!("🎵 Audio languages to keep: {}", config.audio.keep_languages.join(", "));
-    println!("📄 Subtitle languages to keep: {}", config.subtitles.keep_languages.join(", "));
-    
-    if let Some(ref lang) = config.audio.default_language {
-        println!("🎵 Default audio language: {}", lang);
-    }
-    if let Some(ref lang) = config.subtitles.default_language {
-        println!("📄 Default subtitle language: {}", lang);
-    }
+    println!("🎵 Audio languages (ordered by preference): {}", config.audio.keep_languages.join(", "));
+    println!("📄 Subtitle languages (ordered by preference): {}", config.subtitles.keep_languages.join(", "));
     
     println!();
 

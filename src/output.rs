@@ -99,6 +99,96 @@ impl<'a> StreamDisplayer<'a> {
         }
     }
     
+    /// Find the preferred default audio stream (returns stream index)
+    /// Uses the first language from keep_languages that exists in the streams
+    fn get_preferred_default_audio_stream(&self) -> Option<u32> {
+        let audio_streams = self.grouped_streams.get(&StreamType::Audio)?;
+        
+        for keep_lang in &self.config.audio.keep_languages {
+            for stream in audio_streams {
+                if let Some(ref lang) = stream.language {
+                    if lang == keep_lang {
+                        return Some(stream.index);
+                    }
+                }
+            }
+        }
+        None
+    }
+    
+    /// Find the preferred default subtitle stream (returns stream index)
+    /// Uses the first language from keep_languages that exists in the streams
+    fn get_preferred_default_subtitle_stream(&self) -> Option<u32> {
+        let subtitle_streams = self.grouped_streams.get(&StreamType::Subtitle)?;
+        
+        for keep_lang in &self.config.subtitles.keep_languages {
+            for stream in subtitle_streams {
+                if let Some(ref lang) = stream.language {
+                    if lang == keep_lang {
+                        return Some(stream.index);
+                    }
+                }
+            }
+        }
+        None
+    }
+    
+    /// Validate that we're not removing all streams of critical types
+    fn validate_stream_removal(&self) -> Result<()> {
+        // Check audio streams - fail if all would be removed
+        if let Some(audio_streams) = self.grouped_streams.get(&StreamType::Audio) {
+            let keep_count = audio_streams.iter()
+                .filter(|stream| {
+                    if let Some(ref lang) = stream.language {
+                        self.config.audio.keep_languages.contains(lang)
+                    } else {
+                        false
+                    }
+                })
+                .count();
+            
+            if keep_count == 0 {
+                return Err(anyhow::anyhow!(
+                    "Error: All audio streams would be removed. Audio languages to keep: [{}], but available languages are: [{}]",
+                    self.config.audio.keep_languages.join(", "),
+                    audio_streams.iter()
+                        .filter_map(|s| s.language.as_ref().map(|lang| lang.as_str()))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+        }
+        
+        // Check subtitle streams - warn if all would be removed
+        if let Some(subtitle_streams) = self.grouped_streams.get(&StreamType::Subtitle) {
+            let keep_count = subtitle_streams.iter()
+                .filter(|stream| {
+                    if self.config.subtitles.forced_only && !stream.forced {
+                        false
+                    } else if let Some(ref lang) = stream.language {
+                        self.config.subtitles.keep_languages.contains(lang)
+                    } else if stream.forced {
+                        true // Keep forced subtitles even without language
+                    } else {
+                        false
+                    }
+                })
+                .count();
+            
+            if keep_count == 0 {
+                eprintln!("⚠️  Warning: All subtitle streams would be removed. Subtitle languages to keep: [{}], but available languages are: [{}]",
+                    self.config.subtitles.keep_languages.join(", "),
+                    subtitle_streams.iter()
+                        .filter_map(|s| s.language.as_ref().map(|lang| lang.as_str()))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+            }
+        }
+        
+        Ok(())
+    }
+    
     pub fn display(&self) -> Result<()> {
         // Display video streams
         if let Some(streams) = self.grouped_streams.get(&StreamType::Video) {
@@ -119,6 +209,9 @@ impl<'a> StreamDisplayer<'a> {
         if let Some(streams) = self.grouped_streams.get(&StreamType::Attachment) {
             self.display_attachment_streams(streams)?;
         }
+        
+        // Validate stream removal after displaying stream info but before processing
+        self.validate_stream_removal()?;
         
         // Display summary
         self.display_summary()?;
@@ -216,44 +309,99 @@ impl<'a> StreamDisplayer<'a> {
     fn display_attachment_streams(&self, streams: &[&StreamInfo]) -> Result<()> {
         println!("\n{}", "📎 Attachments:".bold().cyan());
         
-        let rows: Vec<AttachmentStreamRow> = streams
-            .iter()
-            .map(|stream| AttachmentStreamRow {
-                index: stream.index.to_string(),
-                attachment_type: stream.codec.clone(),
-                title: stream.title.clone().unwrap_or_else(|| "".to_string()),
-                size: stream.size_mb()
-                    .map(|s| format!("{:.1} MB", s))
-                    .unwrap_or_else(|| "?".to_string()),
-            })
-            .collect();
+        // Group attachments by type for cleaner display
+        let mut type_counts: HashMap<String, usize> = HashMap::new();
+        for stream in streams {
+            let attachment_type = self.get_attachment_type(&stream.codec);
+            *type_counts.entry(attachment_type).or_insert(0) += 1;
+        }
         
-        let table = Table::new(rows)
-            .with(Style::rounded())
-            .to_string();
-        
-        println!("{}", table);
+        // If we have many of the same type, show a summary
+        if streams.len() > 10 && type_counts.len() < streams.len() {
+            println!("Attachment Summary:");
+            for (attachment_type, count) in type_counts {
+                println!("  {} files: {}", attachment_type, count);
+            }
+            println!("\nFirst few attachments:");
+            
+            let limited_streams: Vec<_> = streams.iter().take(5).collect();
+            let rows: Vec<AttachmentStreamRow> = limited_streams
+                .iter()
+                .map(|stream| AttachmentStreamRow {
+                    index: stream.index.to_string(),
+                    attachment_type: self.get_attachment_type(&stream.codec),
+                    title: stream.title.clone().unwrap_or_else(|| "".to_string()),
+                    size: stream.size_mb()
+                        .map(|s| format!("{:.1} MB", s))
+                        .unwrap_or_else(|| "?".to_string()),
+                })
+                .collect();
+            
+            let table = Table::new(rows)
+                .with(Style::rounded())
+                .to_string();
+            
+            println!("{}", table);
+            if streams.len() > 5 {
+                println!("... and {} more attachments", streams.len() - 5);
+            }
+        } else {
+            let rows: Vec<AttachmentStreamRow> = streams
+                .iter()
+                .map(|stream| AttachmentStreamRow {
+                    index: stream.index.to_string(),
+                    attachment_type: self.get_attachment_type(&stream.codec),
+                    title: stream.title.clone().unwrap_or_else(|| "".to_string()),
+                    size: stream.size_mb()
+                        .map(|s| format!("{:.1} MB", s))
+                        .unwrap_or_else(|| "?".to_string()),
+                })
+                .collect();
+            
+            let table = Table::new(rows)
+                .with(Style::rounded())
+                .to_string();
+            
+            println!("{}", table);
+        }
         Ok(())
+    }
+    
+    fn get_attachment_type(&self, codec: &str) -> String {
+        match codec.to_lowercase().as_str() {
+            "ttf" => "TrueType Font".to_string(),
+            "otf" => "OpenType Font".to_string(),
+            "woff" | "woff2" => "Web Font".to_string(),
+            "jpg" | "jpeg" => "JPEG Image".to_string(),
+            "png" => "PNG Image".to_string(),
+            "gif" => "GIF Image".to_string(),
+            "webp" => "WebP Image".to_string(),
+            "pdf" => "PDF Document".to_string(),
+            "txt" => "Text File".to_string(),
+            _ => if codec == "unknown" { "Unknown File".to_string() } else { codec.to_uppercase() },
+        }
     }
     
     fn get_stream_status(&self, stream: &StreamInfo) -> String {
         match stream.stream_type {
             StreamType::Video => {
-                // Keep all video streams for now
+                // Always keep all video streams
                 "KEEP".green().to_string()
             }
             StreamType::Audio => {
                 if let Some(ref lang) = stream.language {
                     if self.config.audio.keep_languages.contains(lang) {
-                        "KEEP".green().to_string()
-                    } else if stream.default {
-                        "KEEP (default)".yellow().to_string()
+                        let preferred_default_index = self.get_preferred_default_audio_stream();
+                        if preferred_default_index == Some(stream.index) {
+                            "KEEP (default)".yellow().to_string()
+                        } else {
+                            "KEEP".green().to_string()
+                        }
                     } else {
                         "REMOVE".red().to_string()
                     }
-                } else if stream.default {
-                    "KEEP (default)".yellow().to_string()
                 } else {
+                    // Unknown language - remove unless it's explicitly kept somehow
                     "REMOVE".red().to_string()
                 }
             }
@@ -262,7 +410,21 @@ impl<'a> StreamDisplayer<'a> {
                     "REMOVE".red().to_string()
                 } else if let Some(ref lang) = stream.language {
                     if self.config.subtitles.keep_languages.contains(lang) {
-                        "KEEP".green().to_string()
+                        let mut status_parts = Vec::new();
+                        
+                        let preferred_default_index = self.get_preferred_default_subtitle_stream();
+                        if preferred_default_index == Some(stream.index) {
+                            status_parts.push("default");
+                        }
+                        if stream.forced {
+                            status_parts.push("forced");
+                        }
+                        
+                        if !status_parts.is_empty() {
+                            format!("KEEP ({})", status_parts.join(", ")).yellow().to_string()
+                        } else {
+                            "KEEP".green().to_string()
+                        }
                     } else if stream.forced {
                         "KEEP (forced)".yellow().to_string()
                     } else {
@@ -273,6 +435,10 @@ impl<'a> StreamDisplayer<'a> {
                 } else {
                     "REMOVE".red().to_string()
                 }
+            }
+            StreamType::Attachment => {
+                // Always keep all attachment streams
+                "KEEP".green().to_string()
             }
             _ => "UNKNOWN".dimmed().to_string(),
         }

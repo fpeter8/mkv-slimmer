@@ -1,23 +1,20 @@
-# MKV Slimmer default configuration
+# MKV Slimmer configuration
 
-# Languages to keep
+# Languages to keep (ordered by preference - first available becomes default)
 audio:
   keep_languages:
-    - eng    # English
-    - jpn    # Japanese
-    - und    # Undefined (often used for original audio)
-  default_language: eng  # Set English as default audio track
+    - jpn    # Japanese (first preference)
+    - und    # Undefined (fallback)
   
 subtitles:
   keep_languages:
-    - eng    # English
-    - spa    # Spanish
-  default_language: eng  # Set English as default subtitle track
+    - hun    # Hungarian (first preference)
+    - und    # Undefined (second preference)
+    - eng    # English (third preference)
+    - jpn    # Japanese (fourth preference)
   forced_only: false     # Keep all matching languages, not just forced
 
-# Stream selection preferences
-video:
-  keep_all: true  # Keep all video streams
+# Note: Video and attachment streams are always kept
 
 # Output preferences  
 output:
