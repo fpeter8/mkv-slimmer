@@ -105,6 +105,14 @@ pub async fn run() -> Result<()> {
     config.prompt_missing_values()
         .context("Failed to prompt for missing configuration values")?;
 
+    // Validate required configuration values
+    if config.audio.keep_languages.is_empty() {
+        anyhow::bail!("At least one audio language must be specified");
+    }
+    if config.subtitles.keep_languages.is_empty() {
+        anyhow::bail!("At least one subtitle language must be specified");
+    }
+
     // Display configuration
     if config.processing.dry_run {
         println!("⚠️  Running in dry-run mode - no files will be modified\n");
