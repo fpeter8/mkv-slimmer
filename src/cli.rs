@@ -90,6 +90,19 @@ pub async fn run() -> Result<()> {
     if !target_directory.is_dir() {
         anyhow::bail!("Target path is not a directory: {}", target_directory.display());
     }
+    
+    // Validate source and target directories are different
+    let source_dir = mkv_file.parent()
+        .context("Could not determine source directory")?;
+    let source_canonical = source_dir.canonicalize()
+        .with_context(|| format!("Could not resolve source directory: {}", source_dir.display()))?;
+    let target_canonical = target_directory.canonicalize()
+        .with_context(|| format!("Could not resolve target directory: {}", target_directory.display()))?;
+    
+    if source_canonical == target_canonical {
+        anyhow::bail!("Source and target directories cannot be the same. Source: {}, Target: {}", 
+            source_dir.display(), target_directory.display());
+    }
 
     // Load configuration (uses defaults if file doesn't exist)
     let mut config = Config::from_yaml(config_path)?;
