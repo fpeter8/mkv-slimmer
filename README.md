@@ -80,12 +80,15 @@ audio:
     - und    # Undefined (fallback)
 
 subtitles:
+  # Subtitle preferences can be:
+  # - Language only: "eng"
+  # - Language with title prefix: "eng, Dialogue"
   keep_languages:
     - hun    # Hungarian (first preference)
     - und    # Undefined (second preference)
-    - eng    # English (third preference)
+    - "eng, Dialogue"  # English with title starting with "Dialogue"
+    - eng    # English (any title)
     - jpn    # Japanese (fourth preference)
-  forced_only: false     # Keep all matching languages, not just forced
 
 # Note: Video and attachment streams are always kept
 
@@ -101,12 +104,27 @@ processing:
 - **Single Default**: Only one stream per type is marked as default (the first found)
 - **Automatic Fallback**: If the first preference doesn't exist, it tries the next one
 
+### Title-Based Subtitle Selection
+
+Subtitles can be selected based on both language and title prefix:
+
+- **Language only**: `"eng"` - Matches any English subtitle
+- **Language with title**: `"eng, Dialogue"` - Matches English subtitles with titles starting with "Dialogue"
+- **Case-insensitive**: Title matching is case-insensitive
+- **Prefix matching**: Only the beginning of the title needs to match
+- **Commas in titles**: Titles can contain commas - only the first comma separates language from title
+
+Examples:
+- `"eng, Full Subtitles"` matches "Full Subtitles - Complete Translation"
+- `"jpn, Signs, Songs & Lyrics"` matches "Signs, Songs & Lyrics (Karaoke)"
+- `"eng, Dialogue"` does NOT match "Signs & Songs"
+
 ## CLI Options
 
 - `<MKV_FILE>` - Path to the MKV file to analyze (required)
 - `<TARGET_DIRECTORY>` - Directory where the modified MKV will be created (required)
 - `-a, --audio-languages <LANG>` - Languages to keep for audio tracks (ordered by preference, can be specified multiple times)
-- `-s, --subtitle-languages <LANG>` - Languages to keep for subtitle tracks (ordered by preference, can be specified multiple times)
+- `-s, --subtitle-languages <LANG>` - Languages to keep for subtitle tracks (ordered by preference, can be specified multiple times, supports "lang" or "lang, title prefix" format)
 - `-n, --dry-run` - Show what would be removed without modifying
 - `-c, --config <FILE>` - Alternative config file path (default: settings.yaml)
 - `-h, --help` - Print help information

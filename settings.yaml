@@ -7,10 +7,15 @@ audio:
     - und    # Undefined (fallback)
   
 subtitles:
+  # Subtitle preferences can be:
+  # - Language only: "eng"
+  # - Language with title prefix: "eng, Dialogue"
+  # The first matching subtitle becomes default
   keep_languages:
     - hun    # Hungarian (first preference)
     - und    # Undefined (second preference)
-    - eng    # English (third preference)
+    - "eng, Dialogue"  # English with title starting with "Dialogue"
+    - eng    # English (any title)
     - jpn    # Japanese (fourth preference)
 
 # Processing options
