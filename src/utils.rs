@@ -23,6 +23,29 @@ pub fn check_dependencies() -> Result<Vec<String>> {
     Ok(missing)
 }
 
+/// Check if the file is a valid MKV file (returns bool, doesn't throw)
+pub fn is_valid_mkv_file<P: AsRef<Path>>(file_path: P) -> bool {
+    let path = file_path.as_ref();
+    
+    // Check if file exists and is a file
+    if !path.exists() || !path.is_file() {
+        return false;
+    }
+    
+    // Check file extension
+    if let Some(ext) = path.extension() {
+        let ext_str = ext.to_string_lossy().to_lowercase();
+        if !["mkv", "mka", "mks"].contains(&ext_str.as_str()) {
+            return false;
+        }
+    } else {
+        return false;
+    }
+    
+    // Check if file is readable
+    std::fs::File::open(path).is_ok()
+}
+
 /// Validate that the file is a valid MKV file
 pub fn validate_mkv_file<P: AsRef<Path>>(file_path: P) -> Result<()> {
     let path = file_path.as_ref();
@@ -156,6 +179,48 @@ pub fn validate_stream_removal(streams: &[StreamInfo], config: &Config) -> Resul
                     .join(", ")
             );
         }
+    }
+    
+    Ok(())
+}
+
+/// Validate that source and target paths are not nested within each other
+/// This prevents scenarios like:
+/// - Source: /movies/season1, Target: /movies/season1/processed
+/// - Source: /movies/season1/episode1.mkv, Target: /movies
+/// - Source: /movies, Target: /movies/processed
+pub fn validate_source_target_paths(source_path: &Path, target_path: &Path) -> Result<()> {
+    // Canonicalize both paths to resolve symlinks and relative paths
+    let source_canonical = source_path.canonicalize()
+        .with_context(|| format!("Could not resolve source path: {}", source_path.display()))?;
+    let target_canonical = target_path.canonicalize()
+        .with_context(|| format!("Could not resolve target path: {}", target_path.display()))?;
+    
+    // Check if paths are exactly the same
+    if source_canonical == target_canonical {
+        anyhow::bail!(
+            "Source and target paths cannot be the same.\nSource: {}\nTarget: {}", 
+            source_path.display(), 
+            target_path.display()
+        );
+    }
+    
+    // Check if target is nested within source
+    if target_canonical.starts_with(&source_canonical) {
+        anyhow::bail!(
+            "Target directory cannot be nested within the source path.\nSource: {}\nTarget: {}\nThis would cause the output to be processed as input in recursive mode.", 
+            source_path.display(), 
+            target_path.display()
+        );
+    }
+    
+    // Check if source is nested within target
+    if source_canonical.starts_with(&target_canonical) {
+        anyhow::bail!(
+            "Source path cannot be nested within the target directory.\nSource: {}\nTarget: {}\nThis would overwrite source files during processing.", 
+            source_path.display(), 
+            target_path.display()
+        );
     }
     
     Ok(())

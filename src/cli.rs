@@ -4,15 +4,16 @@ use std::path::PathBuf;
 
 use crate::config::Config;
 use crate::analyzer::MkvAnalyzer;
-use crate::utils::{check_dependencies, validate_mkv_file, validate_stream_removal};
+use crate::utils::{check_dependencies, validate_mkv_file, validate_stream_removal, validate_source_target_paths};
+use crate::batch::BatchProcessor;
 
 pub async fn run() -> Result<()> {
     let matches = Command::new("mkv-slimmer")
         .version("0.1.0")
         .about("Analyze and remove unnecessary streams from MKV files")
         .arg(
-            Arg::new("mkv_file")
-                .help("Path to the MKV file to analyze")
+            Arg::new("input_path")
+                .help("Path to the MKV file or directory to process")
                 .required(true)
                 .value_parser(clap::value_parser!(PathBuf))
         )
@@ -53,15 +54,31 @@ pub async fn run() -> Result<()> {
                 .default_value("settings.yaml")
                 .value_parser(clap::value_parser!(PathBuf))
         )
+        .arg(
+            Arg::new("recursive")
+                .short('r')
+                .long("recursive")
+                .help("Process directories recursively (only applies when input is a directory)")
+                .action(ArgAction::SetTrue)
+        )
+        .arg(
+            Arg::new("filter")
+                .short('f')
+                .long("filter")
+                .help("Glob pattern to filter files (applies to filename in non-recursive mode, relative path in recursive mode)")
+                .value_name("PATTERN")
+        )
         .get_matches();
 
-    let mkv_file = matches.get_one::<PathBuf>("mkv_file")
-        .expect("mkv_file argument is required but was not provided by clap");
+    let input_path = matches.get_one::<PathBuf>("input_path")
+        .expect("input_path argument is required but was not provided by clap");
     let target_directory = matches.get_one::<PathBuf>("target_directory")
         .expect("target_directory argument is required but was not provided by clap");
     let config_path = matches.get_one::<PathBuf>("config")
         .expect("config argument has a default value but was not provided by clap");
     let dry_run = matches.get_flag("dry_run");
+    let recursive = matches.get_flag("recursive");
+    let filter_pattern = matches.get_one::<String>("filter").map(|s| s.clone());
     
     let audio_languages: Option<Vec<String>> = matches
         .get_many::<String>("audio_languages")
@@ -79,29 +96,12 @@ pub async fn run() -> Result<()> {
         eprintln!("Some features may be limited. Install ffmpeg for full functionality.\n");
     }
 
-    // Validate MKV file
-    validate_mkv_file(mkv_file)
-        .with_context(|| format!("Invalid MKV file: {}", mkv_file.display()))?;
-    
     // Validate target directory exists
     if !target_directory.exists() {
         anyhow::bail!("Target directory does not exist: {}", target_directory.display());
     }
     if !target_directory.is_dir() {
         anyhow::bail!("Target path is not a directory: {}", target_directory.display());
-    }
-    
-    // Validate source and target directories are different
-    let source_dir = mkv_file.parent()
-        .context("Could not determine source directory")?;
-    let source_canonical = source_dir.canonicalize()
-        .with_context(|| format!("Could not resolve source directory: {}", source_dir.display()))?;
-    let target_canonical = target_directory.canonicalize()
-        .with_context(|| format!("Could not resolve target directory: {}", target_directory.display()))?;
-    
-    if source_canonical == target_canonical {
-        anyhow::bail!("Source and target directories cannot be the same. Source: {}, Target: {}", 
-            source_dir.display(), target_directory.display());
     }
 
     // Load configuration (uses defaults if file doesn't exist)
@@ -130,6 +130,33 @@ pub async fn run() -> Result<()> {
     if config.processing.dry_run {
         println!("⚠️  Running in dry-run mode - no files will be modified\n");
     }
+
+    // Check if input is a file or directory and route accordingly
+    if input_path.is_file() {
+        // Single file mode
+        process_single_file(input_path, target_directory, config).await
+    } else if input_path.is_dir() {
+        // Batch mode
+        process_directory(input_path, target_directory, recursive, filter_pattern, config).await
+    } else {
+        anyhow::bail!("Input path does not exist or is neither a file nor a directory: {}", input_path.display());
+    }
+}
+
+async fn process_single_file(
+    mkv_file: &PathBuf,
+    target_directory: &PathBuf,
+    config: Config,
+) -> Result<()> {
+    // Validate MKV file
+    validate_mkv_file(mkv_file)
+        .with_context(|| format!("Invalid MKV file: {}", mkv_file.display()))?;
+    
+    // Validate source and target paths are not nested within each other
+    let source_dir = mkv_file.parent()
+        .context("Could not determine source directory")?;
+    validate_source_target_paths(source_dir, target_directory)
+        .context("Source and target path validation failed")?;
 
     println!("📁 Analyzing: {}", mkv_file.display());
     println!("📂 Target directory: {}", target_directory.display());
@@ -165,6 +192,48 @@ pub async fn run() -> Result<()> {
     println!("\n🎬 Processing streams...");
     analyzer.process_streams().await
         .context("Failed to process streams")?;
+
+    Ok(())
+}
+
+async fn process_directory(
+    input_dir: &PathBuf,
+    target_directory: &PathBuf,
+    recursive: bool,
+    filter_pattern: Option<String>,
+    config: Config,
+) -> Result<()> {
+    // Validate source and target paths are not nested within each other
+    validate_source_target_paths(input_dir, target_directory)
+        .context("Source and target path validation failed")?;
+
+    println!("🎵 Audio languages (ordered by preference): {}", config.audio.keep_languages.join(", "));
+    println!("📄 Subtitle languages (ordered by preference): {}", 
+        config.subtitles.keep_languages
+            .iter()
+            .map(|pref| {
+                if let Some(title) = &pref.title_prefix {
+                    format!("{}, {}", pref.language, title)
+                } else {
+                    pref.language.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    println!();
+
+    // Create batch processor and run
+    let batch_processor = BatchProcessor::new(
+        input_dir.clone(),
+        target_directory.clone(),
+        recursive,
+        filter_pattern,
+        config,
+    );
+
+    let result = batch_processor.process().await?;
+    result.print_summary();
 
     Ok(())
 }

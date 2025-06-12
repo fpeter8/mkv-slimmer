@@ -4,6 +4,7 @@ mod analyzer;
 mod models;
 mod output;
 mod utils;
+mod batch;
 
 use anyhow::Result;
 use cli::run;
