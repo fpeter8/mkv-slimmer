@@ -3,7 +3,7 @@ use colored::*;
 use std::collections::HashMap;
 use tabled::{Table, Tabled, settings::Style};
 
-use crate::config::Config;
+use crate::config::{Config, SubtitlePreference};
 use crate::models::{StreamInfo, StreamType};
 use crate::utils::format_size;
 
@@ -117,15 +117,27 @@ impl<'a> StreamDisplayer<'a> {
     }
     
     /// Find the preferred default subtitle stream (returns stream index)
-    /// Uses the first language from keep_languages that exists in the streams
+    /// Uses the first preference from keep_languages that exists in the streams
     fn get_preferred_default_subtitle_stream(&self) -> Option<u32> {
         let subtitle_streams = self.grouped_streams.get(&StreamType::Subtitle)?;
         
-        for keep_lang in &self.config.subtitles.keep_languages {
+        for pref in &self.config.subtitles.keep_languages {
             for stream in subtitle_streams {
                 if let Some(ref lang) = stream.language {
-                    if lang == keep_lang {
-                        return Some(stream.index);
+                    if lang == &pref.language {
+                        // Check if title matches if required
+                        let title_matches = match (&pref.title_prefix, &stream.title) {
+                            (Some(prefix), Some(title)) => {
+                                // Case-insensitive prefix matching
+                                title.to_lowercase().starts_with(&prefix.to_lowercase())
+                            }
+                            (Some(_), None) => false, // Title required but not present
+                            (None, _) => true, // No title requirement
+                        };
+                        
+                        if title_matches {
+                            return Some(stream.index);
+                        }
                     }
                 }
             }
@@ -348,16 +360,38 @@ impl<'a> StreamDisplayer<'a> {
                 }
             }
             StreamType::Subtitle => {
-                if let Some(ref lang) = stream.language {
-                    if self.config.subtitles.keep_languages.contains(lang) {
+                if stream.forced {
+                    "KEEP (forced)".yellow().to_string()
+                } else if let Some(ref lang) = stream.language {
+                    // Check if any preference matches this subtitle
+                    let matches_preference = self.config.subtitles.keep_languages.iter().any(|pref| {
+                        pref.language == *lang && 
+                        match (&pref.title_prefix, &stream.title) {
+                            (Some(prefix), Some(title)) => {
+                                // Case-insensitive prefix matching
+                                title.to_lowercase().starts_with(&prefix.to_lowercase())
+                            }
+                            (Some(_), None) => false, // Title required but not present
+                            (None, _) => true, // No title requirement
+                        }
+                    });
+                    
+                    if matches_preference {
                         let mut status_parts = Vec::new();
                         
                         let preferred_default_index = self.get_preferred_default_subtitle_stream();
                         if preferred_default_index == Some(stream.index) {
                             status_parts.push("default");
                         }
-                        if stream.forced {
-                            status_parts.push("forced");
+                        
+                        // Add title match indicator if there was a specific title requirement
+                        if let Some(ref title) = stream.title {
+                            if self.config.subtitles.keep_languages.iter().any(|pref| 
+                                pref.language == *lang && 
+                                pref.title_prefix.as_ref().map(|p| title.to_lowercase().starts_with(&p.to_lowercase())).unwrap_or(false)
+                            ) {
+                                status_parts.push("title match");
+                            }
                         }
                         
                         if !status_parts.is_empty() {
@@ -365,13 +399,9 @@ impl<'a> StreamDisplayer<'a> {
                         } else {
                             "KEEP".green().to_string()
                         }
-                    } else if stream.forced {
-                        "KEEP (forced)".yellow().to_string()
                     } else {
                         "REMOVE".red().to_string()
                     }
-                } else if stream.forced {
-                    "KEEP (forced)".yellow().to_string()
                 } else {
                     "REMOVE".red().to_string()
                 }
