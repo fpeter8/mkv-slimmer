@@ -143,6 +143,55 @@ pub async fn run() -> Result<()> {
     }
 }
 
+fn print_configuration_info(config: &Config) {
+    println!("🎵 Audio languages (ordered by preference): {}", config.audio.keep_languages.join(", "));
+    println!("📄 Subtitle languages (ordered by preference): {}", 
+        config.subtitles.keep_languages
+            .iter()
+            .map(|pref| {
+                if let Some(title) = &pref.title_prefix {
+                    format!("{}, {}", pref.language, title)
+                } else {
+                    pref.language.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    println!();
+}
+
+pub async fn analyze_and_process_mkv_file(
+    mkv_file: &PathBuf,
+    target_directory: &PathBuf,
+    config: Config,
+    display_streams: bool,
+) -> Result<()> {
+    // Create analyzer and process
+    let mut analyzer = MkvAnalyzer::new(mkv_file.clone(), target_directory.clone(), config);
+    
+    analyzer.analyze().await
+        .with_context(|| format!("Failed to analyze MKV file: {}", mkv_file.display()))?;
+    
+    // Only display streams in interactive mode (not in batch mode)
+    if display_streams {
+        analyzer.display_streams()
+            .context("Failed to display stream information")?;
+    }
+    
+    // Validate stream removal before processing
+    validate_stream_removal(&analyzer.streams, &analyzer.config)
+        .context("Stream validation failed")?;
+
+    if display_streams {
+        println!("\n🎬 Processing streams...");
+    }
+    analyzer.process_streams().await
+        .context("Failed to process streams")?;
+
+    Ok(())
+}
+
 async fn process_single_file(
     mkv_file: &PathBuf,
     target_directory: &PathBuf,
@@ -160,40 +209,9 @@ async fn process_single_file(
 
     println!("📁 Analyzing: {}", mkv_file.display());
     println!("📂 Target directory: {}", target_directory.display());
-    println!("🎵 Audio languages (ordered by preference): {}", config.audio.keep_languages.join(", "));
-    println!("📄 Subtitle languages (ordered by preference): {}", 
-        config.subtitles.keep_languages
-            .iter()
-            .map(|pref| {
-                if let Some(title) = &pref.title_prefix {
-                    format!("{}, {}", pref.language, title)
-                } else {
-                    pref.language.clone()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-    
-    println!();
+    print_configuration_info(&config);
 
-    // Analyze MKV file
-    let mut analyzer = MkvAnalyzer::new(mkv_file.clone(), target_directory.clone(), config);
-    analyzer.analyze().await
-        .context("Failed to analyze MKV file")?;
-    
-    analyzer.display_streams()
-        .context("Failed to display stream information")?;
-    
-    // Validate stream removal before processing
-    validate_stream_removal(&analyzer.streams, &analyzer.config)
-        .context("Stream validation failed")?;
-
-    println!("\n🎬 Processing streams...");
-    analyzer.process_streams().await
-        .context("Failed to process streams")?;
-
-    Ok(())
+    analyze_and_process_mkv_file(mkv_file, target_directory, config, true).await
 }
 
 async fn process_directory(
@@ -207,21 +225,7 @@ async fn process_directory(
     validate_source_target_paths(input_dir, target_directory)
         .context("Source and target path validation failed")?;
 
-    println!("🎵 Audio languages (ordered by preference): {}", config.audio.keep_languages.join(", "));
-    println!("📄 Subtitle languages (ordered by preference): {}", 
-        config.subtitles.keep_languages
-            .iter()
-            .map(|pref| {
-                if let Some(title) = &pref.title_prefix {
-                    format!("{}, {}", pref.language, title)
-                } else {
-                    pref.language.clone()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-    println!();
+    print_configuration_info(&config);
 
     // Create batch processor and run
     let batch_processor = BatchProcessor::new(

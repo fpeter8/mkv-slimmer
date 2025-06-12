@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use tokio::fs;
 
 use crate::config::Config;
-use crate::analyzer::MkvAnalyzer;
-use crate::utils::{is_valid_mkv_file, validate_stream_removal};
+use crate::utils::is_valid_mkv_file;
+use crate::cli::analyze_and_process_mkv_file;
 
 pub struct BatchProcessor {
     input_path: PathBuf,
@@ -190,25 +190,13 @@ impl BatchProcessor {
                 .with_context(|| format!("Failed to create target directory: {}", parent.display()))?;
         }
 
-        // Create analyzer and process
-        let mut analyzer = MkvAnalyzer::new(
-            file_path.to_path_buf(),
-            target_path.parent().unwrap().to_path_buf(),
+        // Use shared processing function (without stream display for batch mode)
+        analyze_and_process_mkv_file(
+            &file_path.to_path_buf(),
+            &target_path.parent().unwrap().to_path_buf(),
             self.config.clone(),
-        );
-
-        analyzer.analyze().await
-            .with_context(|| format!("Failed to analyze MKV file: {}", file_path.display()))?;
-
-        // Validate stream removal
-        validate_stream_removal(&analyzer.streams, &analyzer.config)
-            .context("Stream validation failed")?;
-
-        // Process streams
-        analyzer.process_streams().await
-            .context("Failed to process streams")?;
-
-        Ok(())
+            false, // Don't display streams in batch mode
+        ).await
     }
 
     fn calculate_target_path(&self, source_file: &Path) -> Result<PathBuf> {
