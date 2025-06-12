@@ -3,7 +3,7 @@ use colored::*;
 use std::collections::HashMap;
 use tabled::{Table, Tabled, settings::Style};
 
-use crate::config::{Config, SubtitlePreference};
+use crate::config::Config;
 use crate::models::{StreamInfo, StreamType};
 use crate::utils::format_size;
 

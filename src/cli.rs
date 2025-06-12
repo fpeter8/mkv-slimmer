@@ -121,7 +121,19 @@ pub async fn run() -> Result<()> {
     println!("📁 Analyzing: {}", mkv_file.display());
     println!("📂 Target directory: {}", target_directory.display());
     println!("🎵 Audio languages (ordered by preference): {}", config.audio.keep_languages.join(", "));
-    println!("📄 Subtitle languages (ordered by preference): {}", config.subtitles.keep_languages.join(", "));
+    println!("📄 Subtitle languages (ordered by preference): {}", 
+        config.subtitles.keep_languages
+            .iter()
+            .map(|pref| {
+                if let Some(title) = &pref.title_prefix {
+                    format!("{}, {}", pref.language, title)
+                } else {
+                    pref.language.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
     
     println!();
 

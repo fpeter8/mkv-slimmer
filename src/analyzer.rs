@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use std::path::PathBuf;
 use std::process::Command;
 
-use crate::config::{Config, SubtitlePreference};
+use crate::config::Config;
 use crate::models::{StreamInfo, StreamType};
 use crate::output::StreamDisplayer;
 

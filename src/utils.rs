@@ -118,19 +118,40 @@ pub fn validate_stream_removal(streams: &[StreamInfo], config: &Config) -> Resul
     if !subtitle_streams.is_empty() {
         let keep_count = subtitle_streams.iter()
             .filter(|stream| {
-                if let Some(ref lang) = stream.language {
-                    config.subtitles.keep_languages.contains(lang)
-                } else if stream.forced {
-                    true // Keep forced subtitles even without language
+                if stream.forced {
+                    true // Always keep forced subtitles
+                } else if let Some(ref lang) = stream.language {
+                    // Check if any preference matches this subtitle
+                    config.subtitles.keep_languages.iter().any(|pref| {
+                        pref.language == *lang && 
+                        match (&pref.title_prefix, &stream.title) {
+                            (Some(prefix), Some(title)) => {
+                                // Case-insensitive prefix matching
+                                title.to_lowercase().starts_with(&prefix.to_lowercase())
+                            }
+                            (Some(_), None) => false, // Title required but not present
+                            (None, _) => true, // No title requirement
+                        }
+                    })
                 } else {
-                    false
+                    false // No language and not forced
                 }
             })
             .count();
         
         if keep_count == 0 {
-            eprintln!("⚠️  Warning: All subtitle streams would be removed. Subtitle languages to keep: [{}], but available languages are: [{}]",
-                config.subtitles.keep_languages.join(", "),
+            eprintln!("⚠️  Warning: All subtitle streams would be removed. Subtitle preferences: [{}], but available languages are: [{}]",
+                config.subtitles.keep_languages
+                    .iter()
+                    .map(|pref| {
+                        if let Some(title) = &pref.title_prefix {
+                            format!("{}, {}", pref.language, title)
+                        } else {
+                            pref.language.clone()
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", "),
                 subtitle_streams.iter()
                     .filter_map(|s| s.language.as_ref().map(|lang| lang.as_str()))
                     .collect::<Vec<_>>()
