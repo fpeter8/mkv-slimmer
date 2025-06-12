@@ -63,6 +63,22 @@ cargo run -- movie.mkv /output/dir -a spa -a jpn
 cargo run -- movie.mkv /output/dir -a eng -a jpn -a spa -s eng -s jpn
 ```
 
+### Batch Processing
+```bash
+# Process all MKV files in a directory
+cargo run -- /movies/folder /output/dir
+
+# Process recursively (maintains directory structure)
+cargo run -- /movies/folder /output/dir --recursive
+
+# Filter files with glob patterns
+cargo run -- /movies/folder /output/dir --filter "*.mkv"
+cargo run -- /movies/folder /output/dir -r -f "series/**/*.mkv"
+
+# Combine with other options
+cargo run -- /movies/folder /output/dir -r -f "*.mkv" -a eng -a jpn -s eng -n
+```
+
 ## Configuration
 
 The tool uses a simple configuration system:
@@ -121,10 +137,12 @@ Examples:
 
 ## CLI Options
 
-- `<MKV_FILE>` - Path to the MKV file to analyze (required)
-- `<TARGET_DIRECTORY>` - Directory where the modified MKV will be created (required)
+- `<INPUT_PATH>` - Path to the MKV file or directory to process (required)
+- `<TARGET_DIRECTORY>` - Directory where the modified MKV files will be created (required)
 - `-a, --audio-languages <LANG>` - Languages to keep for audio tracks (ordered by preference, can be specified multiple times)
 - `-s, --subtitle-languages <LANG>` - Languages to keep for subtitle tracks (ordered by preference, can be specified multiple times, supports "lang" or "lang, title prefix" format)
+- `-r, --recursive` - Process directories recursively (maintains subdirectory structure)
+- `-f, --filter <PATTERN>` - Glob pattern to filter files (filename in non-recursive mode, relative path in recursive mode)
 - `-n, --dry-run` - Show what would be removed without modifying
 - `-c, --config <FILE>` - Alternative config file path (default: settings.yaml)
 - `-h, --help` - Print help information
@@ -145,6 +163,7 @@ Examples:
 - `dialoguer` - Interactive prompts
 - `matroska` - MKV parsing (backup to ffprobe)
 - `tokio` - Async runtime
+- `glob` - Pattern matching for file filtering
 
 ## Stream Protection & Validation
 

@@ -16,3 +16,14 @@
 - Configuration parsing uses split_once(',') to handle complex titles
 - Backward compatible with existing language-only configurations
 - Output display shows "title match" indicator when subtitle is kept due to title
+
+## Batch Processing
+
+- Supports both single file and directory processing modes
+- Automatic detection of input type (file vs directory)
+- Non-recursive directory processing by default
+- Optional recursive mode with --recursive flag maintains directory structure
+- Glob pattern filtering with --filter flag for selective file processing
+- Comprehensive path validation prevents nested source/target scenarios
+- Progress reporting and error collection for batch operations
+- BatchProcessor handles file discovery, filtering, and sequential processing
