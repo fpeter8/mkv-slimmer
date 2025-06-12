@@ -7,9 +7,12 @@ A fast, safe Rust tool to analyze and remove unnecessary streams from MKV files 
 - 🚀 **Fast & Safe** - Written in Rust for performance and memory safety
 - 📊 **Detailed Analysis** - Display comprehensive stream information with beautiful tables
 - 🌍 **Language Filtering** - Filter audio and subtitle tracks by language codes (ordered by preference)
+- 🏷️ **Title-Based Selection** - Advanced subtitle filtering by both language and title prefix matching
 - ✂️ **Stream Removal** - Remove unwanted streams using mkvmerge with proper error handling
 - ⚡ **Smart Optimization** - Automatically detects when processing is unnecessary and uses hardlinking/copying instead
 - 🎯 **Default Flag Management** - Properly sets default flags based on language preferences (only one default per type)
+- 📁 **Batch Processing** - Process entire directories with optional recursive traversal and glob filtering
+- 🔍 **Path Validation** - Comprehensive validation prevents nested source/target scenarios
 - ⚙️ **Simplified Configuration** - Easy YAML configuration with language preferences
 - 🔍 **Dry-run Mode** - Preview changes without modifying files
 - 🎨 **Rich Output** - Colored terminal output with emojis and formatted tables
@@ -165,17 +168,30 @@ Examples:
 - `tokio` - Async runtime
 - `glob` - Pattern matching for file filtering
 
-## Stream Protection & Validation
+## Protection & Validation
 
-The tool includes intelligent stream protection:
+The tool includes comprehensive safety measures:
 
+### Stream Protection
 - **Audio Protection**: Fails with an error if all audio streams would be removed
 - **Subtitle Warning**: Shows a warning if all subtitle streams would be removed (but continues)
 - **Video/Attachment Preservation**: All video and attachment streams are always kept
 
-### Error Example:
-```
+### Path Validation
+- **Nested Directory Prevention**: Prevents dangerous source/target relationships
+- **Same Directory Detection**: Blocks processing when source and target are identical
+- **Infinite Loop Protection**: Stops recursive processing from including its own output
+
+### Validation Examples:
+```bash
+# Stream protection
 Error: All audio streams would be removed. Audio languages to keep: [fre, ger], but available languages are: [jpn, eng]
+
+# Path validation
+Error: Target directory cannot be nested within the source path.
+Source: /movies/season1
+Target: /movies/season1/processed
+This would cause the output to be processed as input in recursive mode.
 ```
 
 ## Example Output

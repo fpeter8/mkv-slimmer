@@ -6,6 +6,7 @@
 - Smart optimization detects when no processing is needed and uses hardlinking/copying instead
 - Proper default flag management ensures only one stream per type is marked as default
 - Comprehensive error handling with helpful messages for common failure scenarios
+- Forced subtitles no longer automatically preserved - they follow same language/title rules
 
 ## Title-Based Subtitle Selection
 
@@ -27,3 +28,28 @@
 - Comprehensive path validation prevents nested source/target scenarios
 - Progress reporting and error collection for batch operations
 - BatchProcessor handles file discovery, filtering, and sequential processing
+
+## Path Validation System
+
+- validate_source_target_paths() function prevents dangerous directory relationships
+- Detects same directory scenarios (source == target)
+- Prevents target nested in source (e.g., /movies → /movies/output)
+- Prevents source nested in target (e.g., /movies/season1 → /movies)
+- Uses canonical paths to resolve symlinks and relative paths
+- Protects against infinite loops in recursive batch processing
+
+## Code Architecture
+
+### Duplication Elimination
+- Extracted print_configuration_info() helper for consistent config display
+- Created shared analyze_and_process_mkv_file() for core MKV processing logic
+- BatchProcessor reuses CLI processing functions instead of duplicating logic
+- display_streams parameter controls output verbosity (interactive vs batch mode)
+
+### Module Structure
+- src/cli.rs: CLI argument parsing and high-level processing coordination
+- src/batch.rs: Batch processing with file discovery and filtering
+- src/analyzer.rs: Core MKV analysis and stream processing logic
+- src/config.rs: Configuration management with SubtitlePreference support
+- src/utils.rs: Shared utilities including validation and dependency checks
+- src/output.rs: Stream display formatting with title matching indicators
