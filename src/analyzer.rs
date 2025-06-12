@@ -431,9 +431,7 @@ impl MkvAnalyzer {
                     }
                 }
                 StreamType::Subtitle => {
-                    if stream.forced {
-                        true // Always keep forced subtitles
-                    } else if let Some(ref lang) = stream.language {
+                    if let Some(ref lang) = stream.language {
                         // Check if any preference matches this subtitle
                         self.config.subtitles.keep_languages.iter().any(|pref| {
                             pref.language == *lang && 
@@ -447,7 +445,7 @@ impl MkvAnalyzer {
                             }
                         })
                     } else {
-                        false // No language and not forced
+                        false // No language
                     }
                 }
                 StreamType::Attachment => {

@@ -118,9 +118,7 @@ pub fn validate_stream_removal(streams: &[StreamInfo], config: &Config) -> Resul
     if !subtitle_streams.is_empty() {
         let keep_count = subtitle_streams.iter()
             .filter(|stream| {
-                if stream.forced {
-                    true // Always keep forced subtitles
-                } else if let Some(ref lang) = stream.language {
+                if let Some(ref lang) = stream.language {
                     // Check if any preference matches this subtitle
                     config.subtitles.keep_languages.iter().any(|pref| {
                         pref.language == *lang && 
@@ -134,7 +132,7 @@ pub fn validate_stream_removal(streams: &[StreamInfo], config: &Config) -> Resul
                         }
                     })
                 } else {
-                    false // No language and not forced
+                    false // No language
                 }
             })
             .count();

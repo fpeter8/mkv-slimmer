@@ -360,9 +360,7 @@ impl<'a> StreamDisplayer<'a> {
                 }
             }
             StreamType::Subtitle => {
-                if stream.forced {
-                    "KEEP (forced)".yellow().to_string()
-                } else if let Some(ref lang) = stream.language {
+                if let Some(ref lang) = stream.language {
                     // Check if any preference matches this subtitle
                     let matches_preference = self.config.subtitles.keep_languages.iter().any(|pref| {
                         pref.language == *lang && 
