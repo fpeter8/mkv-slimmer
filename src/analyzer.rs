@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use std::path::PathBuf;
 use std::process::Command;
 
-use crate::config::Config;
+use crate::config::{Config, SubtitlePreference};
 use crate::models::{StreamInfo, StreamType};
 use crate::output::StreamDisplayer;
 
@@ -431,12 +431,23 @@ impl MkvAnalyzer {
                     }
                 }
                 StreamType::Subtitle => {
-                    if let Some(ref lang) = stream.language {
-                        self.config.subtitles.keep_languages.contains(lang)
-                    } else if stream.forced {
-                        true // Keep forced subtitles even without language
+                    if stream.forced {
+                        true // Always keep forced subtitles
+                    } else if let Some(ref lang) = stream.language {
+                        // Check if any preference matches this subtitle
+                        self.config.subtitles.keep_languages.iter().any(|pref| {
+                            pref.language == *lang && 
+                            match (&pref.title_prefix, &stream.title) {
+                                (Some(prefix), Some(title)) => {
+                                    // Case-insensitive prefix matching
+                                    title.to_lowercase().starts_with(&prefix.to_lowercase())
+                                }
+                                (Some(_), None) => false, // Title required but not present
+                                (None, _) => true, // No title requirement
+                            }
+                        })
                     } else {
-                        false
+                        false // No language and not forced
                     }
                 }
                 StreamType::Attachment => {
@@ -655,13 +666,25 @@ impl MkvAnalyzer {
     }
     
     fn get_default_subtitle_track(&self, subtitle_streams: &[u32]) -> Option<u32> {
-        // Find the first subtitle track that matches the highest priority language
-        for preferred_lang in &self.config.subtitles.keep_languages {
+        // Find the first subtitle track that matches the highest priority preference
+        for pref in &self.config.subtitles.keep_languages {
             for &stream_index in subtitle_streams {
                 if let Some(stream) = self.streams.iter().find(|s| s.index == stream_index) {
                     if let Some(ref lang) = stream.language {
-                        if lang == preferred_lang {
-                            return Some(stream_index);
+                        if lang == &pref.language {
+                            // Check if title matches if required
+                            let title_matches = match (&pref.title_prefix, &stream.title) {
+                                (Some(prefix), Some(title)) => {
+                                    // Case-insensitive prefix matching
+                                    title.to_lowercase().starts_with(&prefix.to_lowercase())
+                                }
+                                (Some(_), None) => false, // Title required but not present
+                                (None, _) => true, // No title requirement
+                            };
+                            
+                            if title_matches {
+                                return Some(stream_index);
+                            }
                         }
                     }
                 }
