@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crate::config::Config;
 use crate::analyzer::MkvAnalyzer;
-use crate::utils::{check_dependencies, validate_mkv_file, validate_stream_removal, validate_source_target_paths};
+use crate::utils::{check_dependencies, validate_mkv_file, validate_stream_removal, validate_source_target_paths, collect_sonarr_environment};
 use crate::batch::BatchProcessor;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -201,14 +201,17 @@ pub async fn run() -> Result<()> {
     if config.processing.dry_run {
         println!("⚠️  Running in dry-run mode - no files will be modified\n");
     }
+    
+    // Collect Sonarr environment variables if present
+    let sonarr_context = collect_sonarr_environment();
 
     // Check if input is a file or directory and route accordingly
     if input_path.is_file() {
         // Single file mode
-        process_single_file(input_path, target_path, &target_type, config).await
+        process_single_file(input_path, target_path, &target_type, config, Some(sonarr_context)).await
     } else if input_path.is_dir() {
         // Batch mode
-        process_directory(input_path, target_path, recursive, filter_pattern, config).await
+        process_directory(input_path, target_path, recursive, filter_pattern, config, Some(sonarr_context)).await
     } else {
         anyhow::bail!("Input path does not exist or is neither a file nor a directory: {}", input_path.display());
     }
@@ -238,9 +241,10 @@ pub async fn analyze_and_process_mkv_file(
     config: Config,
     display_streams: bool,
     output_filename: Option<String>,
+    sonarr_context: Option<crate::models::SonarrContext>,
 ) -> Result<()> {
     // Create analyzer and process
-    let mut analyzer = MkvAnalyzer::new(mkv_file.clone(), target_directory.clone(), config, output_filename);
+    let mut analyzer = MkvAnalyzer::new(mkv_file.clone(), target_directory.clone(), config, output_filename, sonarr_context);
     
     analyzer.analyze().await
         .with_context(|| format!("Failed to analyze MKV file: {}", mkv_file.display()))?;
@@ -269,6 +273,7 @@ async fn process_single_file(
     target_path: &PathBuf,
     target_type: &TargetType,
     config: Config,
+    sonarr_context: Option<crate::models::SonarrContext>,
 ) -> Result<()> {
     // Validate MKV file
     validate_mkv_file(mkv_file)
@@ -309,7 +314,7 @@ async fn process_single_file(
     }
     print_configuration_info(&config);
 
-    analyze_and_process_mkv_file(mkv_file, &target_directory.to_path_buf(), config, true, output_filename).await
+    analyze_and_process_mkv_file(mkv_file, &target_directory.to_path_buf(), config, true, output_filename, sonarr_context).await
 }
 
 async fn process_directory(
@@ -318,6 +323,7 @@ async fn process_directory(
     recursive: bool,
     filter_pattern: Option<String>,
     config: Config,
+    sonarr_context: Option<crate::models::SonarrContext>,
 ) -> Result<()> {
     // Ensure target is a directory for batch processing
     if !target_path.is_dir() {
@@ -337,6 +343,7 @@ async fn process_directory(
         recursive,
         filter_pattern,
         config,
+        sonarr_context,
     );
 
     let result = batch_processor.process().await?;

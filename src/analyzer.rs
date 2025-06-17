@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use crate::config::Config;
-use crate::models::{StreamInfo, StreamType};
+use crate::models::{StreamInfo, StreamType, SonarrContext};
 use crate::output::StreamDisplayer;
 
 pub struct MkvAnalyzer {
@@ -12,16 +12,18 @@ pub struct MkvAnalyzer {
     pub config: Config,
     pub streams: Vec<StreamInfo>,
     pub output_filename: Option<String>,
+    pub sonarr_context: Option<SonarrContext>,
 }
 
 impl MkvAnalyzer {
-    pub fn new(file_path: PathBuf, target_directory: PathBuf, config: Config, output_filename: Option<String>) -> Self {
+    pub fn new(file_path: PathBuf, target_directory: PathBuf, config: Config, output_filename: Option<String>, sonarr_context: Option<SonarrContext>) -> Self {
         Self {
             file_path,
             target_directory,
             config,
             streams: Vec::new(),
             output_filename,
+            sonarr_context,
         }
     }
     
@@ -243,9 +245,7 @@ impl MkvAnalyzer {
         if !self.is_mkvmerge_necessary(&streams_to_keep) {
             return self.handle_no_processing_needed(&output_path).await;
         }
-        
-
-        
+                
         // Build mkvmerge command
         let mut cmd = self.build_mkvmerge_command(&streams_to_keep, &output_path)?;
         
@@ -310,6 +310,12 @@ impl MkvAnalyzer {
         }
         
         println!("✅ Stream processing completed successfully!");
+        
+        // Notify Sonarr if context is present - file was modified so request rename
+        if self.sonarr_context.as_ref().map(|ctx| ctx.is_present()).unwrap_or(false) {
+            println!("[MoveStatus] RenameRequested");
+        }
+        
         Ok(())
     }
     
@@ -382,24 +388,81 @@ impl MkvAnalyzer {
             return Ok(());
         }
         
-        println!("✨ No stream processing needed - linking/copying file instead");
+        println!("✨ No stream processing needed - transferring file instead");
         
-        // Try to create a hard link first
-        match std::fs::hard_link(&self.file_path, output_path) {
-            Ok(()) => {
-                println!("🔗 Hard linked to: {}", output_path.display());
+        // Use Sonarr transfer mode if available, otherwise default behavior
+        match self.sonarr_context.as_ref().and_then(|ctx| ctx.transfer_mode.as_deref()) {
+            Some("Move") => {
+                // Try rename first, fallback to copy+delete for cross-filesystem moves
+                match std::fs::rename(&self.file_path, output_path) {
+                    Ok(()) => {
+                        println!("📦 Moved to: {}", output_path.display());
+                        Ok(())
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::CrossesDevices => {
+                        std::fs::copy(&self.file_path, output_path)
+                            .with_context(|| format!("Failed to copy file from {} to {}", 
+                                self.file_path.display(), output_path.display()))?;
+                        std::fs::remove_file(&self.file_path)
+                            .with_context(|| format!("Failed to remove source file: {}", self.file_path.display()))?;
+                        println!("📦 Moved to: {} (via copy+delete)", output_path.display());
+                        Ok(())
+                    }
+                    Err(e) => Err(e).with_context(|| format!("Failed to move file from {} to {}", 
+                        self.file_path.display(), output_path.display())),
+                }
             }
-            Err(_) => {
-                // Hard link failed, try to copy
+            Some("Copy") => {
                 std::fs::copy(&self.file_path, output_path)
                     .with_context(|| format!("Failed to copy file from {} to {}", 
                         self.file_path.display(), output_path.display()))?;
                 println!("📋 Copied to: {}", output_path.display());
+                Ok(())
             }
-        }
+            Some("HardLink") => {
+                std::fs::hard_link(&self.file_path, output_path)
+                    .with_context(|| format!("Failed to hard link file from {} to {}", 
+                        self.file_path.display(), output_path.display()))?;
+                println!("🔗 Hard linked to: {}", output_path.display());
+                Ok(())
+            }
+            Some("HardLinkOrCopy") | None => {
+                // Default behavior: try hard link first, then copy
+                match std::fs::hard_link(&self.file_path, output_path) {
+                    Ok(()) => {
+                        println!("🔗 Hard linked to: {}", output_path.display());
+                        Ok(())
+                    }
+                    Err(_) => {
+                        std::fs::copy(&self.file_path, output_path)
+                            .with_context(|| format!("Failed to copy file from {} to {}", 
+                                self.file_path.display(), output_path.display()))?;
+                        println!("📋 Copied to: {}", output_path.display());
+                        Ok(())
+                    }
+                }
+            }
+            Some(unknown_mode) => {
+                eprintln!("⚠️  Unknown Sonarr transfer mode '{}', using default behavior", unknown_mode);
+                // Default behavior: try hard link first, then copy
+                match std::fs::hard_link(&self.file_path, output_path) {
+                    Ok(()) => {
+                        println!("🔗 Hard linked to: {}", output_path.display());
+                        Ok(())
+                    }
+                    Err(_) => {
+                        std::fs::copy(&self.file_path, output_path)
+                            .with_context(|| format!("Failed to copy file from {} to {}", 
+                                self.file_path.display(), output_path.display()))?;
+                        println!("📋 Copied to: {}", output_path.display());
+                        Ok(())
+                    }
+                }
+            }
+        }?;
         
         // Show file info
-        let file_size = std::fs::metadata(&self.file_path)
+        let file_size = std::fs::metadata(output_path)
             .map(|m| m.len())
             .unwrap_or(0);
         
@@ -407,6 +470,11 @@ impl MkvAnalyzer {
         println!("📊 File size: {}", crate::utils::format_size(file_size));
         println!("💾 Space saved: 0 B (0.0%) - no processing required");
         println!("✅ Stream processing completed successfully!");
+        
+        // Notify Sonarr if context is present
+        if self.sonarr_context.as_ref().map(|ctx| ctx.is_present()).unwrap_or(false) {
+            println!("[MoveStatus] MoveComplete");
+        }
         
         Ok(())
     }

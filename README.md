@@ -13,6 +13,8 @@ A fast, safe Rust tool to analyze and remove unnecessary streams from MKV files 
 - 🎯 **Default Flag Management** - Properly sets default flags based on language preferences (only one default per type)
 - 📁 **Batch Processing** - Process entire directories with optional recursive traversal and glob filtering
 - 🔍 **Path Validation** - Comprehensive validation prevents nested source/target scenarios
+- 📄 **Flexible Output** - Support for both directory and file targets
+- 🎬 **Sonarr Integration** - Native support as a Sonarr import script with proper communication
 - ⚙️ **Simplified Configuration** - Easy YAML configuration with language preferences
 - 🔍 **Dry-run Mode** - Preview changes without modifying files
 - 🎨 **Rich Output** - Colored terminal output with emojis and formatted tables
@@ -35,6 +37,10 @@ cd mkv-slimmer
 # Build with Cargo
 cargo build --release
 
+# Build for Sonarr
+rustup target add x86_64-unknown-linux-musl
+cargo build --target x86_64-unknown-linux-musl --release
+
 # Or run directly
 cargo run -- --help
 ```
@@ -45,6 +51,9 @@ cargo run -- --help
 ```bash
 # Process MKV file and output to specified directory
 cargo run -- movie.mkv /path/to/output/directory
+
+# Process MKV file and output to specified file
+cargo run -- movie.mkv /path/to/output/file.mkv
 
 # Or using the compiled binary
 ./target/release/mkv-slimmer movie.mkv /path/to/output/directory
@@ -80,6 +89,22 @@ cargo run -- /movies/folder /output/dir -r -f "series/**/*.mkv"
 
 # Combine with other options
 cargo run -- /movies/folder /output/dir -r -f "*.mkv" -a eng -a jpn -s eng -n
+```
+
+### Sonarr Integration
+
+MKV Slimmer can be used as a Sonarr import script:
+
+```bash
+# Example Sonarr script configuration
+# Set as Script Import Path in Sonarr settings
+./target/release/mkv-slimmer "$1" "$2" -a eng -a jpn -s eng
+
+# The tool automatically:
+# - Detects Sonarr environment variables
+# - Respects transfer mode (Move, Copy, HardLink, HardLinkOrCopy)
+# - Outputs proper status commands ([MoveStatus] MoveComplete/RenameRequested)
+# - Handles cross-filesystem moves with copy+delete fallback
 ```
 
 ## Configuration
@@ -141,7 +166,7 @@ Examples:
 ## CLI Options
 
 - `<INPUT_PATH>` - Path to the MKV file or directory to process (required)
-- `<TARGET_DIRECTORY>` - Directory where the modified MKV files will be created (required)
+- `<TARGET_PATH>` - Path where the modified MKV will be created (can be a file or directory) (required)
 - `-a, --audio-languages <LANG>` - Languages to keep for audio tracks (ordered by preference, can be specified multiple times)
 - `-s, --subtitle-languages <LANG>` - Languages to keep for subtitle tracks (ordered by preference, can be specified multiple times, supports "lang" or "lang, title prefix" format)
 - `-r, --recursive` - Process directories recursively (maintains subdirectory structure)
@@ -150,6 +175,13 @@ Examples:
 - `-c, --config <FILE>` - Alternative config file path (default: settings.yaml)
 - `-h, --help` - Print help information
 - `-V, --version` - Print version information
+
+### Target Path Behavior
+
+- **File → File**: Uses the provided path instead of the input filename
+- **File → Directory**: Current behavior, appends input filename to output directory  
+- **Directory → Directory**: Current behavior for batch processing
+- **Directory → File**: Not allowed (returns error)
 
 ## Dependencies
 

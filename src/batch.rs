@@ -6,6 +6,7 @@ use tokio::fs;
 use crate::config::Config;
 use crate::utils::is_valid_mkv_file;
 use crate::cli::analyze_and_process_mkv_file;
+use crate::models::SonarrContext;
 
 pub struct BatchProcessor {
     input_path: PathBuf,
@@ -13,6 +14,7 @@ pub struct BatchProcessor {
     recursive: bool,
     filter_pattern: Option<String>,
     config: Config,
+    sonarr_context: Option<SonarrContext>,
 }
 
 pub struct BatchResult {
@@ -29,6 +31,7 @@ impl BatchProcessor {
         recursive: bool,
         filter_pattern: Option<String>,
         config: Config,
+        sonarr_context: Option<SonarrContext>,
     ) -> Self {
         Self {
             input_path,
@@ -36,6 +39,7 @@ impl BatchProcessor {
             recursive,
             filter_pattern,
             config,
+            sonarr_context,
         }
     }
 
@@ -197,6 +201,7 @@ impl BatchProcessor {
             self.config.clone(),
             false,
             None,
+            self.sonarr_context.clone(),
         ).await
     }
 
