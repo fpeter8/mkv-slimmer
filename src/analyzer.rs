@@ -11,15 +11,17 @@ pub struct MkvAnalyzer {
     pub target_directory: PathBuf,
     pub config: Config,
     pub streams: Vec<StreamInfo>,
+    pub output_filename: Option<String>,
 }
 
 impl MkvAnalyzer {
-    pub fn new(file_path: PathBuf, target_directory: PathBuf, config: Config) -> Self {
+    pub fn new(file_path: PathBuf, target_directory: PathBuf, config: Config, output_filename: Option<String>) -> Self {
         Self {
             file_path,
             target_directory,
             config,
             streams: Vec::new(),
+            output_filename,
         }
     }
     
@@ -467,14 +469,21 @@ impl MkvAnalyzer {
     }
     
     fn generate_output_path(&self) -> Result<PathBuf> {
-        let file_stem = self.file_path.file_stem()
-            .context("Could not get file stem from input path")?
-            .to_string_lossy();
-        let extension = self.file_path.extension()
-            .context("Could not get file extension from input path")?
-            .to_string_lossy();
+        let output_filename = if let Some(ref custom_filename) = self.output_filename {
+            // Use the provided filename
+            custom_filename.clone()
+        } else {
+            // Generate filename from input file
+            let file_stem = self.file_path.file_stem()
+                .context("Could not get file stem from input path")?
+                .to_string_lossy();
+            let extension = self.file_path.extension()
+                .context("Could not get file extension from input path")?
+                .to_string_lossy();
+            
+            format!("{}.{}", file_stem, extension)
+        };
         
-        let output_filename = format!("{}.{}", file_stem, extension);
         let output_path = self.target_directory.join(output_filename);
         
         // Verify we can write to the target directory

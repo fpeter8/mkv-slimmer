@@ -195,7 +195,8 @@ impl BatchProcessor {
             &file_path.to_path_buf(),
             &target_path.parent().unwrap().to_path_buf(),
             self.config.clone(),
-            false, // Don't display streams in batch mode
+            false,
+            None,
         ).await
     }
 

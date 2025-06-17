@@ -190,11 +190,22 @@ pub fn validate_stream_removal(streams: &[StreamInfo], config: &Config) -> Resul
 /// - Source: /movies/season1/episode1.mkv, Target: /movies
 /// - Source: /movies, Target: /movies/processed
 pub fn validate_source_target_paths(source_path: &Path, target_path: &Path) -> Result<()> {
-    // Canonicalize both paths to resolve symlinks and relative paths
+    // Canonicalize source path to resolve symlinks and relative paths
     let source_canonical = source_path.canonicalize()
         .with_context(|| format!("Could not resolve source path: {}", source_path.display()))?;
-    let target_canonical = target_path.canonicalize()
-        .with_context(|| format!("Could not resolve target path: {}", target_path.display()))?;
+    
+    // For target path, handle the case where it might not exist yet
+    let target_canonical = if target_path.exists() {
+        target_path.canonicalize()
+            .with_context(|| format!("Could not resolve target path: {}", target_path.display()))?
+    } else {
+        // If target doesn't exist, canonicalize its parent directory
+        let parent = target_path.parent()
+            .context("Target path has no parent directory")?;
+        let parent_canonical = parent.canonicalize()
+            .with_context(|| format!("Could not resolve target parent path: {}", parent.display()))?;
+        parent_canonical.join(target_path.file_name().unwrap_or_default())
+    };
     
     // Check if paths are exactly the same
     if source_canonical == target_canonical {
@@ -208,7 +219,7 @@ pub fn validate_source_target_paths(source_path: &Path, target_path: &Path) -> R
     // Check if target is nested within source
     if target_canonical.starts_with(&source_canonical) {
         anyhow::bail!(
-            "Target directory cannot be nested within the source path.\nSource: {}\nTarget: {}\nThis would cause the output to be processed as input in recursive mode.", 
+            "Target path cannot be nested within the source path.\nSource: {}\nTarget: {}\nThis would cause the output to be processed as input in recursive mode.", 
             source_path.display(), 
             target_path.display()
         );
@@ -217,7 +228,7 @@ pub fn validate_source_target_paths(source_path: &Path, target_path: &Path) -> R
     // Check if source is nested within target
     if source_canonical.starts_with(&target_canonical) {
         anyhow::bail!(
-            "Source path cannot be nested within the target directory.\nSource: {}\nTarget: {}\nThis would overwrite source files during processing.", 
+            "Source path cannot be nested within the target path.\nSource: {}\nTarget: {}\nThis would overwrite source files during processing.", 
             source_path.display(), 
             target_path.display()
         );
