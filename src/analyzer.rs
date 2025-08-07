@@ -493,11 +493,20 @@ impl MkvAnalyzer {
                         self.config.audio.keep_languages.contains(lang)
                     } else {
                         // Keep audio streams without language if no other audio would be kept
-                        !self.streams.iter()
-                            .filter(|s| s.stream_type == StreamType::Audio)
-                            .any(|s| s.language.as_ref()
-                                .map(|l| self.config.audio.keep_languages.contains(l))
-                                .unwrap_or(false))
+                        {
+                            let mut has_matching_audio = false;
+                            for stream in &self.streams {
+                                if stream.stream_type == StreamType::Audio {
+                                    if let Some(ref lang) = stream.language {
+                                        if self.config.audio.keep_languages.contains(lang) {
+                                            has_matching_audio = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            !has_matching_audio
+                        }
                     }
                 }
                 StreamType::Subtitle => {

@@ -1,7 +1,6 @@
+use crate::models::SonarrContext;
 use anyhow::{Context, Result};
 use std::path::Path;
-use crate::config::Config;
-use crate::models::{StreamInfo, StreamType, SonarrContext};
 
 /// Check for required external dependencies
 pub fn check_dependencies() -> Result<Vec<String>> {
@@ -98,90 +97,6 @@ pub fn format_size(size_bytes: u64) -> String {
     }
     
     format!("{:.1} {}", size_value, SIZE_UNITS[current_unit_index])
-}
-
-/// Validate that we're not removing all streams of critical types
-pub fn validate_stream_removal(streams: &[StreamInfo], config: &Config) -> Result<()> {
-    // Group streams by type
-    let audio_streams: Vec<&StreamInfo> = streams
-        .iter()
-        .filter(|s| s.stream_type == StreamType::Audio)
-        .collect();
-    
-    let subtitle_streams: Vec<&StreamInfo> = streams
-        .iter()
-        .filter(|s| s.stream_type == StreamType::Subtitle)
-        .collect();
-    
-    // Check audio streams - fail if all would be removed
-    if !audio_streams.is_empty() {
-        let keep_count = audio_streams.iter()
-            .filter(|stream| {
-                if let Some(ref lang) = stream.language {
-                    config.audio.keep_languages.contains(lang)
-                } else {
-                    false
-                }
-            })
-            .count();
-        
-        if keep_count == 0 {
-            return Err(anyhow::anyhow!(
-                "All audio streams would be removed. Audio languages to keep: [{}], but available languages are: [{}]",
-                config.audio.keep_languages.join(", "),
-                audio_streams.iter()
-                    .filter_map(|s| s.language.as_ref().map(|lang| lang.as_str()))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
-        }
-    }
-    
-    // Check subtitle streams - warn if all would be removed
-    if !subtitle_streams.is_empty() {
-        let keep_count = subtitle_streams.iter()
-            .filter(|stream| {
-                if let Some(ref lang) = stream.language {
-                    // Check if any preference matches this subtitle
-                    config.subtitles.keep_languages.iter().any(|pref| {
-                        pref.language == *lang && 
-                        match (&pref.title_prefix, &stream.title) {
-                            (Some(prefix), Some(title)) => {
-                                // Case-insensitive prefix matching
-                                title.to_lowercase().starts_with(&prefix.to_lowercase())
-                            }
-                            (Some(_), None) => false, // Title required but not present
-                            (None, _) => true, // No title requirement
-                        }
-                    })
-                } else {
-                    false // No language
-                }
-            })
-            .count();
-        
-        if keep_count == 0 {
-            eprintln!("⚠️  Warning: All subtitle streams would be removed. Subtitle preferences: [{}], but available languages are: [{}]",
-                config.subtitles.keep_languages
-                    .iter()
-                    .map(|pref| {
-                        if let Some(title) = &pref.title_prefix {
-                            format!("{}, {}", pref.language, title)
-                        } else {
-                            pref.language.clone()
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                subtitle_streams.iter()
-                    .filter_map(|s| s.language.as_ref().map(|lang| lang.as_str()))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
-        }
-    }
-    
-    Ok(())
 }
 
 /// Validate that source and target paths are not nested within each other

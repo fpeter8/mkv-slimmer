@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crate::config::Config;
 use crate::analyzer::MkvAnalyzer;
-use crate::utils::{check_dependencies, validate_mkv_file, validate_stream_removal, validate_source_target_paths, collect_sonarr_environment};
+use crate::utils::{check_dependencies, validate_mkv_file, validate_source_target_paths, collect_sonarr_environment};
 use crate::batch::BatchProcessor;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -254,10 +254,6 @@ pub async fn analyze_and_process_mkv_file(
         analyzer.display_streams()
             .context("Failed to display stream information")?;
     }
-    
-    // Validate stream removal before processing
-    validate_stream_removal(&analyzer.streams, &analyzer.config)
-        .context("Stream validation failed")?;
 
     if display_streams {
         println!("\n🎬 Processing streams...");
