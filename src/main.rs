@@ -2,7 +2,7 @@ mod cli;
 mod config;
 mod analyzer;
 mod models;
-mod output;
+mod display;
 mod utils;
 mod batch;
 

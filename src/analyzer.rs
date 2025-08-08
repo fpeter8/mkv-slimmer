@@ -4,7 +4,7 @@ use std::process::Command;
 
 use crate::config::Config;
 use crate::models::{StreamInfo, StreamType, SonarrContext};
-use crate::output::StreamDisplayer;
+use crate::display::StreamDisplayer;
 
 struct StreamIndices {
     audio: Vec<u32>,

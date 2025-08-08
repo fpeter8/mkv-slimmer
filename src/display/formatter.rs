@@ -1,79 +1,13 @@
 use anyhow::Result;
 use colored::*;
 use std::collections::HashMap;
-use tabled::{Table, Tabled, settings::Style};
+use tabled::{Table, settings::Style};
 
 use crate::config::Config;
 use crate::models::{StreamInfo, StreamType};
 use crate::utils::format_size;
 
-#[derive(Tabled)]
-struct VideoStreamRow {
-    #[tabled(rename = "#")]
-    index: String,
-    #[tabled(rename = "Codec")]
-    codec: String,
-    #[tabled(rename = "Resolution")]
-    resolution: String,
-    #[tabled(rename = "FPS")]
-    fps: String,
-    #[tabled(rename = "HDR")]
-    hdr: String,
-    #[tabled(rename = "Size")]
-    size: String,
-    #[tabled(rename = "Status")]
-    status: String,
-}
-
-#[derive(Tabled)]
-struct AudioStreamRow {
-    #[tabled(rename = "#")]
-    index: String,
-    #[tabled(rename = "Codec")]
-    codec: String,
-    #[tabled(rename = "Language")]
-    language: String,
-    #[tabled(rename = "Channels")]
-    channels: String,
-    #[tabled(rename = "Sample Rate")]
-    sample_rate: String,
-    #[tabled(rename = "Size")]
-    size: String,
-    #[tabled(rename = "Default")]
-    default: String,
-    #[tabled(rename = "Status")]
-    status: String,
-}
-
-#[derive(Tabled)]
-struct SubtitleStreamRow {
-    #[tabled(rename = "#")]
-    index: String,
-    #[tabled(rename = "Format")]
-    format: String,
-    #[tabled(rename = "Language")]
-    language: String,
-    #[tabled(rename = "Title")]
-    title: String,
-    #[tabled(rename = "Default")]
-    default: String,
-    #[tabled(rename = "Forced")]
-    forced: String,
-    #[tabled(rename = "Status")]
-    status: String,
-}
-
-#[derive(Tabled)]
-struct AttachmentStreamRow {
-    #[tabled(rename = "#")]
-    index: String,
-    #[tabled(rename = "Type")]
-    attachment_type: String,
-    #[tabled(rename = "Title")]
-    title: String,
-    #[tabled(rename = "Size")]
-    size: String,
-}
+use super::tables::{VideoStreamRow, AudioStreamRow, SubtitleStreamRow, AttachmentStreamRow};
 
 pub struct StreamDisplayer<'a> {
     streams: &'a [StreamInfo],
@@ -144,7 +78,6 @@ impl<'a> StreamDisplayer<'a> {
         }
         None
     }
-    
     
     pub fn display(&self) -> Result<()> {
         // Display video streams
