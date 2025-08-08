@@ -214,6 +214,13 @@ impl BatchProcessor {
             let relative_path = source_file.strip_prefix(&self.input_path)
                 .with_context(|| format!("Failed to strip prefix from {}", source_file.display()))?;
             
+            // Validate no path traversal components
+            for component in relative_path.components() {
+                if matches!(component, std::path::Component::ParentDir) {
+                    anyhow::bail!("Path traversal attempt detected in: {}", relative_path.display());
+                }
+            }
+            
             Ok(self.target_directory.join(relative_path))
         } else {
             // Simple filename in target directory

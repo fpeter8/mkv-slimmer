@@ -101,11 +101,11 @@ pub async fn run() -> Result<()> {
         .get_matches();
 
     let input_path = matches.get_one::<PathBuf>("input_path")
-        .expect("input_path argument is required but was not provided by clap");
+        .ok_or_else(|| anyhow::anyhow!("Required input_path argument missing - clap configuration error"))?;
     let target_path = matches.get_one::<PathBuf>("target_path")
-        .expect("target_path argument is required but was not provided by clap");
+        .ok_or_else(|| anyhow::anyhow!("Required target_path argument missing - clap configuration error"))?;
     let config_path = matches.get_one::<PathBuf>("config")
-        .expect("config argument has a default value but was not provided by clap");
+        .ok_or_else(|| anyhow::anyhow!("Config argument with default value missing - clap configuration error"))?;
     let dry_run = matches.get_flag("dry_run");
     let recursive = matches.get_flag("recursive");
     let filter_pattern = matches.get_one::<String>("filter").map(|s| s.clone());

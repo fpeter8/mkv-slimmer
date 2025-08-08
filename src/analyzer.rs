@@ -6,6 +6,12 @@ use crate::config::Config;
 use crate::models::{StreamInfo, StreamType, SonarrContext};
 use crate::output::StreamDisplayer;
 
+struct StreamIndices {
+    audio: Vec<u32>,
+    subtitle: Vec<u32>,
+    video: Vec<u32>,
+}
+
 pub struct MkvAnalyzer {
     pub file_path: PathBuf,
     pub target_directory: PathBuf,
@@ -340,26 +346,19 @@ impl MkvAnalyzer {
     }
     
     fn needs_default_flag_changes(&self, streams_to_keep: &[u32]) -> bool {
-        // Get audio and subtitle streams to check
+        // Build stream indices once for O(1) filtering instead of O(n²)
+        let indices = self.build_stream_indices();
+        
+        // Filter streams to keep by type using efficient set intersection
         let audio_streams: Vec<u32> = streams_to_keep.iter()
-                                                     .filter(|&&index| {
-                                                         self.streams.iter()
-                                                             .find(|s| s.index == index)
-                                                             .map(|s| s.stream_type == StreamType::Audio)
-                                                             .unwrap_or(false)
-                                                     })
-                                                     .copied()
-                                                     .collect();
+            .filter(|&&index| indices.audio.contains(&index))
+            .copied()
+            .collect();
         
         let subtitle_streams: Vec<u32> = streams_to_keep.iter()
-                                                        .filter(|&&index| {
-                                                            self.streams.iter()
-                                                                .find(|s| s.index == index)
-                                                                .map(|s| s.stream_type == StreamType::Subtitle)
-                                                                .unwrap_or(false)
-                                                        })
-                                                        .copied()
-                                                        .collect();
+            .filter(|&&index| indices.subtitle.contains(&index))
+            .copied()
+            .collect();
         
         // Check ALL audio streams for correct default flag state
         let desired_default_audio = self.get_default_audio_track(&audio_streams);
@@ -834,6 +833,23 @@ impl MkvAnalyzer {
         
         // No default subtitle - let all subtitle tracks be non-default
         None
+    }
+    
+    fn build_stream_indices(&self) -> StreamIndices {
+        let mut audio = Vec::new();
+        let mut subtitle = Vec::new();
+        let mut video = Vec::new();
+        
+        for stream in &self.streams {
+            match stream.stream_type {
+                StreamType::Audio => audio.push(stream.index),
+                StreamType::Subtitle => subtitle.push(stream.index),
+                StreamType::Video => video.push(stream.index),
+                _ => {} // Attachment streams
+            }
+        }
+        
+        StreamIndices { audio, subtitle, video }
     }
 }
 
