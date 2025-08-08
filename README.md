@@ -293,8 +293,8 @@ Streams to remove: 1
 - ✅ **Stream Removal** - Complete with mkvmerge integration and error handling
 - ✅ **Smart Optimization** - Automatic detection and hardlinking/copying when no processing needed
 - ✅ **Default Flag Management** - Proper setting of default flags based on language preferences
-- 🚧 **Batch Processing** - Multiple files support
-- 🚧 **GUI Interface** - Desktop application
+- ✅ **Batch Processing** - Complete with recursive directory support, glob filtering, and progress reporting
+- ✅ **Modular Architecture** - Clean hierarchical structure with eliminated circular dependencies
 
 ## Performance
 
