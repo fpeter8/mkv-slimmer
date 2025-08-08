@@ -3,4 +3,4 @@ pub mod batch;
 pub mod processor;
 
 pub use batch::BatchProcessor;
-pub use processor::analyze_and_process_mkv_file;
+pub use processor::{analyze_and_process_mkv_file, process_task, handle_non_mkv_file};

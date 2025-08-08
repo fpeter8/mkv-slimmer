@@ -3,7 +3,9 @@
     "allow": [
       "Bash(rm:*)",
       "Bash(cargo check:*)",
-      "Bash(cargo:*)"
+      "Bash(cargo:*)",
+      "Bash(./target/release/mkv-slimmer:*)",
+      "Bash(./target/debug/mkv-slimmer:*)"
     ],
     "deny": []
   }

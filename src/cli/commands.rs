@@ -3,8 +3,8 @@ use colored::*;
 use std::path::PathBuf;
 
 use crate::config::Config;
-use crate::core::{BatchProcessor, analyze_and_process_mkv_file};
-use crate::utils::{check_dependencies, validate_source_target_paths, collect_sonarr_environment};
+use crate::models::SonarrContext;
+use crate::utils::{check_dependencies, collect_sonarr_environment};
 
 use super::args::CliArgs;
 
@@ -12,6 +12,20 @@ use super::args::CliArgs;
 pub enum TargetType {
     File,
     Directory,
+}
+
+/// Processed CLI settings ready for main processing
+#[derive(Debug, Clone)]
+pub struct ProcessingSettings {
+    pub input_path: PathBuf,
+    pub target_path: PathBuf,
+    pub target_type: TargetType,
+    pub recursive: bool,
+    pub filter_pattern: Option<String>,
+    pub config: Config,
+    pub sonarr_context: Option<SonarrContext>,
+    pub input_is_file: bool,
+    pub input_is_dir: bool,
 }
 
 /// Determine if target_path represents a file or directory
@@ -38,7 +52,9 @@ pub fn determine_target_type(target_path: &PathBuf) -> TargetType {
     }
 }
 
-pub async fn run_cli() -> Result<()> {
+/// Parse CLI arguments, validate settings, and prepare configuration
+/// Returns ProcessingSettings ready for main processing orchestration
+pub async fn prepare_processing_settings() -> Result<ProcessingSettings> {
     let args = CliArgs::parse()?;
 
     // Check dependencies
@@ -113,104 +129,19 @@ pub async fn run_cli() -> Result<()> {
         None
     };
 
-    if input_is_file {
-        // Process single file
-        process_single_file(&args.input_path, &args.target_path, &target_type, config, sonarr_context_opt).await?;
-    } else {
-        // Process directory
-        process_directory(&args.input_path, &args.target_path, args.recursive, args.filter_pattern, config, sonarr_context_opt).await?;
-    }
-
-    Ok(())
-}
-
-async fn process_single_file(
-    mkv_file: &PathBuf,
-    target_path: &PathBuf,
-    target_type: &TargetType,
-    config: Config,
-    sonarr_context: Option<crate::models::SonarrContext>,
-) -> Result<()> {
-    // MKV file validation is now handled in the processor with fallback behavior
-    
-    // Handle different target types
-    let (target_directory, output_filename) = match target_type {
-        TargetType::File => {
-            // File → File: use parent directory and extract filename
-            let parent_dir = target_path.parent()
-                .context("Could not determine parent directory from target file path")?;
-            let filename = target_path.file_name()
-                .context("Could not extract filename from target path")?
-                .to_string_lossy()
-                .to_string();
-            (parent_dir, Some(filename))
-        }
-        TargetType::Directory => {
-            // File → Directory: current behavior
-            (target_path.as_path(), None)
-        }
-    };
-    
-    // Validate source and target paths are not nested within each other
-    let source_dir = mkv_file.parent()
-        .context("Could not determine source directory")?;
-    validate_source_target_paths(source_dir, target_directory)
-        .context("Source and target path validation failed")?;
-
-    println!("📁 Analyzing: {}", mkv_file.display());
-    match target_type {
-        TargetType::File => {
-            println!("📄 Target file: {}", target_path.display());
-        }
-        TargetType::Directory => {
-            println!("📂 Target directory: {}", target_path.display());
-        }
-    }
-    print_configuration_info(&config);
-
-    analyze_and_process_mkv_file(mkv_file, &target_directory.to_path_buf(), config, true, output_filename, sonarr_context).await
-}
-
-async fn process_directory(
-    input_dir: &PathBuf,
-    target_directory: &PathBuf,
-    recursive: bool,
-    filter_pattern: Option<String>,
-    config: Config,
-    sonarr_context: Option<crate::models::SonarrContext>,
-) -> Result<()> {
-    // Validate source and target paths are not nested within each other
-    validate_source_target_paths(input_dir, target_directory)
-        .context("Source and target path validation failed")?;
-
-    println!("📁 Source directory: {}", input_dir.display());
-    println!("📂 Target directory: {}", target_directory.display());
-    print_configuration_info(&config);
-
-    let batch_processor = BatchProcessor::new(
-        input_dir.clone(),
-        target_directory.clone(),
-        recursive,
-        filter_pattern,
+    Ok(ProcessingSettings {
+        input_path: args.input_path,
+        target_path: args.target_path,
+        target_type,
+        recursive: args.recursive,
+        filter_pattern: args.filter_pattern,
         config,
-        sonarr_context,
-    );
-
-    let result = batch_processor.process().await?;
-
-    println!("\n🎯 Batch Processing Results:");
-    println!("📊 Total files processed: {}", result.total_files);
-    println!("✅ Successful: {}", result.successful);
-    if result.failed > 0 {
-        println!("❌ Failed: {}", result.failed);
-        println!("\nErrors encountered:");
-        for (file, error) in &result.errors {
-            println!("  {} - {}", file.display(), error);
-        }
-    }
-
-    Ok(())
+        sonarr_context: sonarr_context_opt,
+        input_is_file,
+        input_is_dir,
+    })
 }
+
 
 pub fn print_configuration_info(config: &Config) {
     println!("\n⚙️  Configuration:");

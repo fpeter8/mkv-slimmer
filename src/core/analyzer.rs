@@ -871,3 +871,566 @@ fn parse_duration_tag(duration_str: &str) -> Option<f64> {
     }
     None
 }
+
+// ===== New ProcessingTask-based functions =====
+
+/// Analyze MKV file streams and return StreamInfo vector
+/// This replaces MkvAnalyzer::analyze() 
+pub async fn analyze_mkv_streams(file_path: &std::path::Path) -> Result<Vec<StreamInfo>> {
+    // Try to get ffprobe data first
+    let ffprobe_data = get_ffprobe_data(file_path).await;
+    
+    // Try to get matroska data
+    let matroska_data = get_matroska_data(file_path).await;
+    
+    // Combine the data sources
+    extract_streams_from_data(ffprobe_data, matroska_data)
+}
+
+/// Process MKV streams using a ProcessingTask and global config/sonarr context
+/// This replaces MkvAnalyzer::process_streams()
+pub async fn process_mkv_streams(
+    task: &crate::models::ProcessingTask,
+    config: &Config,
+    sonarr_context: Option<&SonarrContext>,
+) -> Result<()> {
+    // Determine streams to keep based on config
+    let streams_to_keep = determine_streams_to_keep(&task.streams, config);
+    
+    // Check if we need to do any processing
+    let all_stream_indices: Vec<u32> = task.streams.iter().map(|s| s.index).collect();
+    let needs_processing = streams_to_keep.len() != all_stream_indices.len() ||
+        streams_to_keep != all_stream_indices;
+    
+    if !needs_processing {
+        // No processing needed, just copy/hardlink
+        let _output_path = task.generate_output_path()?;
+        return handle_no_processing_needed_task(task, config, sonarr_context).await;
+    }
+    
+    let output_path = task.generate_output_path()?;
+    
+    if config.processing.dry_run {
+        println!("🔍 Dry run: Would process streams and save to {}", output_path.display());
+        return Ok(());
+    }
+    
+    // Build and execute mkvmerge command
+    let mut cmd = build_mkvmerge_command_for_task(task, &streams_to_keep, &output_path, config)?;
+    
+    let output = cmd.output()
+        .with_context(|| "Failed to execute mkvmerge command")?;
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow::anyhow!(
+            "mkvmerge failed with exit code {:?}:\n{}",
+            output.status.code(),
+            stderr
+        ));
+    }
+    
+    println!("✅ Successfully processed: {}", output_path.display());
+    
+    // Handle Sonarr communication
+    if let Some(_sonarr) = sonarr_context {
+        println!("[MoveStatus] RenameRequested");
+    }
+    
+    Ok(())
+}
+
+/// Handle no processing needed scenario for ProcessingTask
+/// This replaces MkvAnalyzer::handle_no_processing_needed()
+pub async fn handle_no_processing_needed_task(
+    task: &crate::models::ProcessingTask,
+    config: &Config,
+    sonarr_context: Option<&SonarrContext>,
+) -> Result<()> {
+    let output_path = task.generate_output_path()?;
+    
+    if config.processing.dry_run {
+        println!("🔍 Dry run: Would copy {} to {}", 
+                task.source_file.display(), output_path.display());
+        return Ok(());
+    }
+    
+    // Determine transfer mode from Sonarr context
+    let transfer_mode = sonarr_context
+        .and_then(|ctx| ctx.transfer_mode.as_deref())
+        .unwrap_or("HardLinkOrCopy");
+    
+    match transfer_mode {
+        "Move" => {
+            match std::fs::rename(&task.source_file, &output_path) {
+                Ok(()) => println!("📁 Moved: {} → {}", task.source_file.display(), output_path.display()),
+                Err(_) => {
+                    // Cross-filesystem move: copy then delete
+                    std::fs::copy(&task.source_file, &output_path)
+                        .with_context(|| format!("Failed to copy file for cross-filesystem move"))?;
+                    std::fs::remove_file(&task.source_file)
+                        .with_context(|| format!("Failed to remove source file after copy"))?;
+                    println!("📁 Moved (cross-filesystem): {} → {}", task.source_file.display(), output_path.display());
+                }
+            }
+        }
+        "Copy" => {
+            std::fs::copy(&task.source_file, &output_path)
+                .with_context(|| format!("Failed to copy file"))?;
+            println!("📋 Copied: {} → {}", task.source_file.display(), output_path.display());
+        }
+        "HardLink" => {
+            std::fs::hard_link(&task.source_file, &output_path)
+                .with_context(|| format!("Failed to create hard link"))?;
+            println!("🔗 Hard linked: {} → {}", task.source_file.display(), output_path.display());
+        }
+        "HardLinkOrCopy" | _ => {
+            // Default behavior: try hard link, fall back to copy
+            match std::fs::hard_link(&task.source_file, &output_path) {
+                Ok(()) => {
+                    println!("🔗 Hard linked: {} → {}", task.source_file.display(), output_path.display());
+                }
+                Err(_) => {
+                    std::fs::copy(&task.source_file, &output_path)
+                        .with_context(|| format!("Failed to copy file after hard link failed"))?;
+                    println!("📋 Copied (hard link failed): {} → {}", task.source_file.display(), output_path.display());
+                }
+            }
+        }
+    }
+    
+    // Handle Sonarr communication
+    if let Some(_) = sonarr_context {
+        println!("[MoveStatus] MoveComplete");
+    }
+    
+    Ok(())
+}
+
+// ===== Helper functions extracted from MkvAnalyzer =====
+
+async fn get_ffprobe_data(file_path: &std::path::Path) -> Option<serde_json::Value> {
+    let output = Command::new("ffprobe")
+        .args([
+            "-v", "quiet",
+            "-print_format", "json",
+            "-show_format",
+            "-show_streams",
+            &file_path.to_string_lossy(),
+        ])
+        .output();
+    
+    match output {
+        Ok(output) if output.status.success() => {
+            match serde_json::from_slice(&output.stdout) {
+                Ok(data) => Some(data),
+                Err(e) => {
+                    eprintln!("Warning: Could not parse ffprobe output: {}", e);
+                    None
+                }
+            }
+        }
+        Ok(_) => {
+            eprintln!("Warning: ffprobe failed, using limited stream information");
+            None
+        }
+        Err(_) => {
+            eprintln!("Warning: ffprobe not available, using limited stream information");
+            None
+        }
+    }
+}
+
+async fn get_matroska_data(file_path: &std::path::Path) -> Option<matroska::Matroska> {
+    match std::fs::File::open(file_path) {
+        Ok(file) => {
+            match matroska::Matroska::open(file) {
+                Ok(mkv) => Some(mkv),
+                Err(e) => {
+                    eprintln!("Warning: Could not parse with matroska crate: {}", e);
+                    None
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("Warning: Could not open file for matroska parsing: {}", e);
+            None
+        }
+    }
+}
+
+fn extract_streams_from_data(
+    ffprobe_data: Option<serde_json::Value>,
+    _matroska_data: Option<matroska::Matroska>,
+) -> Result<Vec<StreamInfo>> {
+    let mut streams = Vec::new();
+    
+    // For now, focus on ffprobe data
+    if let Some(data) = ffprobe_data {
+        if let Some(stream_array) = data["streams"].as_array() {
+            for (index, stream) in stream_array.iter().enumerate() {
+                let stream_info = create_stream_info_from_ffprobe(index as u32, stream)?;
+                streams.push(stream_info);
+            }
+        }
+    } else {
+        // Fallback: create minimal stream info
+        eprintln!("Warning: No stream information available - using fallback");
+        let stream_info = StreamInfo::new(0, StreamType::Unknown);
+        streams.push(stream_info);
+    }
+    
+    Ok(streams)
+}
+
+fn create_stream_info_from_ffprobe(
+    index: u32,
+    stream: &serde_json::Value,
+) -> Result<StreamInfo> {
+    let codec_type = stream["codec_type"].as_str().unwrap_or("unknown");
+    let stream_type = match codec_type {
+        "video" => StreamType::Video,
+        "audio" => StreamType::Audio,
+        "subtitle" => StreamType::Subtitle,
+        "attachment" => StreamType::Attachment,
+        _ => StreamType::Unknown,
+    };
+    
+    let mut info = StreamInfo::new(index, stream_type);
+    
+    // Basic information
+    info.codec = stream["codec_name"]
+        .as_str()
+        .or_else(|| stream["codec_long_name"].as_str())
+        .unwrap_or("unknown")
+        .to_string();
+    
+    // Language and metadata
+    if let Some(tags) = stream["tags"].as_object() {
+        info.language = tags.get("language").and_then(|v| v.as_str()).map(|s| s.to_string());
+        info.title = tags.get("title").and_then(|v| v.as_str()).map(|s| s.to_string());
+        
+        // Check for DURATION tag (format: "00:01:31.010000000")
+        if let Some(duration_str) = tags.get("DURATION").and_then(|v| v.as_str()) {
+            if let Some(duration_seconds) = parse_duration_tag(duration_str) {
+                info.duration_seconds = Some(duration_seconds);
+            }
+        }
+        
+        // Check for NUMBER_OF_BYTES tag
+        if let Some(bytes_str) = tags.get("NUMBER_OF_BYTES").and_then(|v| v.as_str()) {
+            if let Ok(bytes) = bytes_str.parse::<u64>() {
+                info.size_bytes = Some(bytes);
+            }
+        }
+    }
+    
+    // Disposition (default/forced flags)
+    if let Some(disposition) = stream["disposition"].as_object() {
+        info.default = disposition.get("default").and_then(|v| v.as_i64()).unwrap_or(0) == 1;
+        info.forced = disposition.get("forced").and_then(|v| v.as_i64()).unwrap_or(0) == 1;
+    }
+    
+    // Size and duration (from standard fields if tags didn't provide them)
+    if let Some(bit_rate) = stream["bit_rate"].as_str().and_then(|s| s.parse::<u64>().ok()) {
+        info.bitrate = Some(bit_rate);
+        
+        // Use standard duration field if we didn't get it from tags
+        if info.duration_seconds.is_none() {
+            if let Some(duration) = stream["duration"].as_str().and_then(|s| s.parse::<f64>().ok()) {
+                info.duration_seconds = Some(duration);
+            }
+        }
+        
+        // Calculate size from bitrate and duration if we didn't get it from tags
+        if info.size_bytes.is_none() {
+            if let Some(duration) = info.duration_seconds {
+                info.size_bytes = Some((bit_rate * duration as u64) / 8);
+            }
+        }
+    }
+    
+    // Type-specific information
+    match info.stream_type {
+        StreamType::Video => {
+            info.resolution = Some(format!(
+                "{}x{}",
+                stream["width"].as_i64().unwrap_or(0),
+                stream["height"].as_i64().unwrap_or(0)
+            ));
+            
+            if let Some(fps_str) = stream["r_frame_rate"].as_str() {
+                info.framerate = parse_framerate(fps_str);
+            }
+        }
+        StreamType::Audio => {
+            info.channels = stream["channels"].as_i64().map(|c| c as u32);
+            info.sample_rate = stream["sample_rate"].as_str()
+                .and_then(|s| s.parse::<u32>().ok());
+        }
+        StreamType::Subtitle => {
+            info.subtitle_format = stream["codec_name"].as_str()
+                .map(|s| s.to_string());
+        }
+        _ => {}
+    }
+    
+    Ok(info)
+}
+
+fn determine_streams_to_keep(streams: &[StreamInfo], config: &Config) -> Vec<u32> {
+    let mut streams_to_keep = Vec::new();
+    
+    for stream in streams {
+        let should_keep = match stream.stream_type {
+            StreamType::Video => {
+                // Always keep video streams
+                true
+            }
+            StreamType::Audio => {
+                if let Some(ref lang) = stream.language {
+                    config.audio.keep_languages.contains(lang)
+                } else {
+                    // Keep audio streams without language info
+                    false
+                }
+            }
+            StreamType::Subtitle => {
+                if let Some(ref lang) = stream.language {
+                    // Check if any preference matches this subtitle
+                    config.subtitles.keep_languages.iter().any(|pref| {
+                        pref.language == *lang && 
+                        match (&pref.title_prefix, &stream.title) {
+                            (Some(prefix), Some(title)) => {
+                                // Case-insensitive prefix matching
+                                title.to_lowercase().starts_with(&prefix.to_lowercase())
+                            }
+                            (Some(_), None) => false, // Title required but not present
+                            (None, _) => true, // No title requirement
+                        }
+                    })
+                } else {
+                    false // No language
+                }
+            }
+            StreamType::Attachment => {
+                // Usually keep attachments (fonts, etc.)
+                true
+            }
+            StreamType::Unknown => {
+                // Keep unknown streams to be safe
+                true
+            }
+        };
+        
+        if should_keep {
+            streams_to_keep.push(stream.index);
+        }
+    }
+    
+    streams_to_keep
+}
+
+fn build_mkvmerge_command_for_task(
+    task: &crate::models::ProcessingTask,
+    streams_to_keep: &[u32],
+    output_path: &PathBuf,
+    config: &Config,
+) -> Result<Command> {
+    let mut cmd = Command::new("mkvmerge");
+    
+    // Output file
+    cmd.arg("-o").arg(output_path);
+    
+    // Separate streams by type
+    let video_streams: Vec<u32> = streams_to_keep.iter()
+        .filter(|&&index| {
+            task.streams.iter()
+                .find(|s| s.index == index)
+                .map(|s| s.stream_type == StreamType::Video)
+                .unwrap_or(false)
+        })
+        .copied()
+        .collect();
+    
+    let audio_streams: Vec<u32> = streams_to_keep.iter()
+        .filter(|&&index| {
+            task.streams.iter()
+                .find(|s| s.index == index)
+                .map(|s| s.stream_type == StreamType::Audio)
+                .unwrap_or(false)
+        })
+        .copied()
+        .collect();
+    
+    let subtitle_streams: Vec<u32> = streams_to_keep.iter()
+        .filter(|&&index| {
+            task.streams.iter()
+                .find(|s| s.index == index)
+                .map(|s| s.stream_type == StreamType::Subtitle)
+                .unwrap_or(false)
+        })
+        .copied()
+        .collect();
+    
+    let attachment_streams: Vec<u32> = streams_to_keep.iter()
+        .filter(|&&index| {
+            task.streams.iter()
+                .find(|s| s.index == index)
+                .map(|s| s.stream_type == StreamType::Attachment)
+                .unwrap_or(false)
+        })
+        .copied()
+        .collect();
+    
+    // Check if we need to filter streams (only specify if we're removing some)
+    let all_video_streams: Vec<u32> = task.streams.iter()
+        .filter(|s| s.stream_type == StreamType::Video)
+        .map(|s| s.index)
+        .collect();
+    let all_audio_streams: Vec<u32> = task.streams.iter()
+        .filter(|s| s.stream_type == StreamType::Audio)
+        .map(|s| s.index)
+        .collect();
+    let all_subtitle_streams: Vec<u32> = task.streams.iter()
+        .filter(|s| s.stream_type == StreamType::Subtitle)
+        .map(|s| s.index)
+        .collect();
+    let all_attachment_streams: Vec<u32> = task.streams.iter()
+        .filter(|s| s.stream_type == StreamType::Attachment)
+        .map(|s| s.index)
+        .collect();
+    
+    // Only specify track selection if we're filtering out some tracks
+    if video_streams.len() != all_video_streams.len() {
+        if video_streams.is_empty() {
+            cmd.arg("--no-video");
+        } else {
+            cmd.arg("--video-tracks");
+            cmd.arg(video_streams.iter()
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join(","));
+        }
+    }
+    
+    if audio_streams.len() != all_audio_streams.len() {
+        if audio_streams.is_empty() {
+            cmd.arg("--no-audio");
+        } else {
+            cmd.arg("--audio-tracks");
+            cmd.arg(audio_streams.iter()
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join(","));
+        }
+    }
+    
+    if subtitle_streams.len() != all_subtitle_streams.len() {
+        if subtitle_streams.is_empty() {
+            cmd.arg("--no-subtitles");
+        } else {
+            cmd.arg("--subtitle-tracks");
+            cmd.arg(subtitle_streams.iter()
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join(","));
+        }
+    }
+    
+    if attachment_streams.len() != all_attachment_streams.len() {
+        if attachment_streams.is_empty() {
+            cmd.arg("--no-attachments");
+        } else {
+            cmd.arg("--attachments");
+            cmd.arg(attachment_streams.iter()
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join(","));
+        }
+    }
+    
+    // Set default flags based on language preferences
+    
+    // Default audio track - first matching language in preference order
+    if let Some(default_audio) = get_default_audio_track(&task.streams, &audio_streams, config) {
+        cmd.arg("--default-track-flag").arg(format!("{}:1", default_audio));
+        
+        // Set all other audio tracks to non-default
+        for &track in &audio_streams {
+            if track != default_audio {
+                cmd.arg("--default-track-flag").arg(format!("{}:0", track));
+            }
+        }
+    }
+    
+    // Default subtitle track - first matching language in preference order
+    if let Some(default_subtitle) = get_default_subtitle_track(&task.streams, &subtitle_streams, config) {
+        cmd.arg("--default-track-flag").arg(format!("{}:1", default_subtitle));
+        
+        // Set all other subtitle tracks to non-default
+        for &track in &subtitle_streams {
+            if track != default_subtitle {
+                cmd.arg("--default-track-flag").arg(format!("{}:0", track));
+            }
+        }
+    } else {
+        // If no subtitle should be default, make sure all are set to non-default
+        for &track in &subtitle_streams {
+            cmd.arg("--default-track-flag").arg(format!("{}:0", track));
+        }
+    }
+    
+    // Input file
+    cmd.arg(&task.source_file);
+    
+    Ok(cmd)
+}
+
+fn get_default_audio_track(streams: &[StreamInfo], audio_streams: &[u32], config: &Config) -> Option<u32> {
+    // Find the first audio track that matches the highest priority language
+    for preferred_lang in &config.audio.keep_languages {
+        for &stream_index in audio_streams {
+            if let Some(stream) = streams.iter().find(|s| s.index == stream_index) {
+                if let Some(ref lang) = stream.language {
+                    if lang == preferred_lang {
+                        return Some(stream_index);
+                    }
+                }
+            }
+        }
+    }
+    
+    // If no language preference matches, return the first audio stream
+    audio_streams.first().copied()
+}
+
+fn get_default_subtitle_track(streams: &[StreamInfo], subtitle_streams: &[u32], config: &Config) -> Option<u32> {
+    // Find the first subtitle track that matches the highest priority preference
+    for pref in &config.subtitles.keep_languages {
+        for &stream_index in subtitle_streams {
+            if let Some(stream) = streams.iter().find(|s| s.index == stream_index) {
+                if let Some(ref lang) = stream.language {
+                    if lang == &pref.language {
+                        // Check if title matches if required
+                        let title_matches = match (&pref.title_prefix, &stream.title) {
+                            (Some(prefix), Some(title)) => {
+                                // Case-insensitive prefix matching
+                                title.to_lowercase().starts_with(&prefix.to_lowercase())
+                            }
+                            (Some(_), None) => false, // Title required but not present
+                            (None, _) => true, // No title requirement
+                        };
+                        
+                        if title_matches {
+                            return Some(stream_index);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // No default subtitle - let all subtitle tracks be non-default
+    None
+}

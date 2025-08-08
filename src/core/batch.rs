@@ -196,6 +196,8 @@ impl BatchProcessor {
             .with_context(|| format!("Failed to create target directory: {}", target_directory.display()))?;
 
         // Use shared processing function (without stream display for batch mode)
+        // NOTE: This uses the legacy function which internally creates ProcessingTask
+        // This maintains compatibility while using the new architecture
         analyze_and_process_mkv_file(
             &file_path.to_path_buf(),
             &target_directory.to_path_buf(),
