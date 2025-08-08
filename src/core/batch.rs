@@ -5,7 +5,7 @@ use tokio::fs;
 
 use crate::config::Config;
 use crate::utils::is_valid_mkv_file;
-use crate::cli::analyze_and_process_mkv_file;
+use super::processor::analyze_and_process_mkv_file;
 use crate::models::SonarrContext;
 
 pub struct BatchProcessor {

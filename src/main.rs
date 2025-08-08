@@ -1,10 +1,9 @@
 mod cli;
 mod config;
-mod analyzer;
+mod core;
 mod models;
 mod display;
 mod utils;
-mod batch;
 
 use anyhow::Result;
 use cli::run;

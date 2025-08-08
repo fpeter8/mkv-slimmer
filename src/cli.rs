@@ -3,9 +3,8 @@ use clap::{Arg, Command, ArgAction};
 use std::path::PathBuf;
 
 use crate::config::Config;
-use crate::analyzer::MkvAnalyzer;
+use crate::core::{BatchProcessor, analyze_and_process_mkv_file};
 use crate::utils::{check_dependencies, validate_mkv_file, validate_source_target_paths, collect_sonarr_environment};
-use crate::batch::BatchProcessor;
 
 #[derive(Debug, Clone, PartialEq)]
 enum TargetType {
@@ -235,34 +234,6 @@ fn print_configuration_info(config: &Config) {
     println!();
 }
 
-pub async fn analyze_and_process_mkv_file(
-    mkv_file: &PathBuf,
-    target_directory: &PathBuf,
-    config: Config,
-    display_streams: bool,
-    output_filename: Option<String>,
-    sonarr_context: Option<crate::models::SonarrContext>,
-) -> Result<()> {
-    // Create analyzer and process
-    let mut analyzer = MkvAnalyzer::new(mkv_file.clone(), target_directory.clone(), config, output_filename, sonarr_context);
-    
-    analyzer.analyze().await
-        .with_context(|| format!("Failed to analyze MKV file: {}", mkv_file.display()))?;
-    
-    // Only display streams in interactive mode (not in batch mode)
-    if display_streams {
-        analyzer.display_streams()
-            .context("Failed to display stream information")?;
-    }
-
-    if display_streams {
-        println!("\n🎬 Processing streams...");
-    }
-    analyzer.process_streams().await
-        .context("Failed to process streams")?;
-
-    Ok(())
-}
 
 async fn process_single_file(
     mkv_file: &PathBuf,
