@@ -233,7 +233,10 @@ impl MkvAnalyzer {
         let streams_to_keep = self.get_streams_to_keep();
         
         if streams_to_keep.is_empty() {
-            return Err(anyhow::anyhow!("No streams would be kept - refusing to process"));
+            println!("⚠️  No streams match the configured language preferences");
+            println!("🔄 Falling back to copying original file (no processing needed)");
+            let output_path = self.generate_output_path()?;
+            return self.handle_no_processing_needed(&output_path).await;
         }
         
         println!("🎯 Keeping {} stream(s): {}",
@@ -386,26 +389,19 @@ impl MkvAnalyzer {
     }
     
     fn needs_forced_flag_changes(&self, streams_to_keep: &[u32]) -> bool {
-        // Get audio and subtitle streams to check
+        // Build stream indices once for O(1) filtering instead of O(n²)
+        let indices = self.build_stream_indices();
+        
+        // Get audio and subtitle streams to check using efficient filtering
         let audio_streams: Vec<u32> = streams_to_keep.iter()
-                                                     .filter(|&&index| {
-                                                         self.streams.iter()
-                                                             .find(|s| s.index == index)
-                                                             .map(|s| s.stream_type == StreamType::Audio)
-                                                             .unwrap_or(false)
-                                                     })
-                                                     .copied()
-                                                     .collect();
+            .filter(|&&index| indices.audio.contains(&index))
+            .copied()
+            .collect();
         
         let subtitle_streams: Vec<u32> = streams_to_keep.iter()
-                                                        .filter(|&&index| {
-                                                            self.streams.iter()
-                                                                .find(|s| s.index == index)
-                                                                .map(|s| s.stream_type == StreamType::Subtitle)
-                                                                .unwrap_or(false)
-                                                        })
-                                                        .copied()
-                                                        .collect();
+            .filter(|&&index| indices.subtitle.contains(&index))
+            .copied()
+            .collect();
         
         if audio_streams.len() > 1 {
             let desired_default_audio = self.get_default_audio_track(&audio_streams);
@@ -434,7 +430,7 @@ impl MkvAnalyzer {
         false
     }
     
-    async fn handle_no_processing_needed(&self, output_path: &PathBuf) -> Result<()> {
+    pub async fn handle_no_processing_needed(&self, output_path: &PathBuf) -> Result<()> {
         if self.config.processing.dry_run {
             println!("🚧 Dry-run mode: No processing needed - would link/copy file to: {}", output_path.display());
             println!("✅ Dry-run completed successfully!");
@@ -545,21 +541,9 @@ impl MkvAnalyzer {
                     if let Some(ref lang) = stream.language {
                         self.config.audio.keep_languages.contains(lang)
                     } else {
-                        // Keep audio streams without language if no other audio would be kept
-                        {
-                            let mut has_matching_audio = false;
-                            for stream in &self.streams {
-                                if stream.stream_type == StreamType::Audio {
-                                    if let Some(ref lang) = stream.language {
-                                        if self.config.audio.keep_languages.contains(lang) {
-                                            has_matching_audio = true;
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                            !has_matching_audio
-                        }
+                        // Audio streams without language tags are not kept
+                        // If no audio streams match preferences, fallback will handle it
+                        false
                     }
                 }
                 StreamType::Subtitle => {
@@ -598,7 +582,7 @@ impl MkvAnalyzer {
         streams_to_keep
     }
     
-    fn generate_output_path(&self) -> Result<PathBuf> {
+    pub fn generate_output_path(&self) -> Result<PathBuf> {
         let output_filename = if let Some(ref custom_filename) = self.output_filename {
             // Use the provided filename
             custom_filename.clone()

@@ -52,7 +52,7 @@ impl Config {
         audio_languages: Option<Vec<String>>,
         subtitle_languages: Option<Vec<String>>,
         dry_run: bool,
-    ) {
+    ) -> Result<()> {
         // Audio languages
         if let Some(langs) = audio_languages {
             self.audio.keep_languages = langs;
@@ -64,10 +64,7 @@ impl Config {
                 .into_iter()
                 .map(|s| SubtitlePreference::parse(&s))
                 .collect::<Result<Vec<_>>>()
-                .unwrap_or_else(|e| {
-                    eprintln!("Error parsing subtitle language: {}", e);
-                    std::process::exit(1);
-                });
+                .with_context(|| "Failed to parse subtitle language preferences from CLI arguments")?;
         }
         
         // Processing options
@@ -76,10 +73,10 @@ impl Config {
         }
         
         // Validate configuration after CLI merge
-        if let Err(e) = self.validate() {
-            eprintln!("Error: Configuration validation failed: {}", e);
-            std::process::exit(1);
-        }
+        self.validate()
+            .with_context(|| "Configuration validation failed after merging CLI arguments")?;
+        
+        Ok(())
     }
     
     pub fn prompt_missing_values(&mut self) -> Result<()> {

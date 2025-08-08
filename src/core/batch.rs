@@ -188,16 +188,17 @@ impl BatchProcessor {
         // Calculate target path
         let target_path = self.calculate_target_path(file_path)?;
         
-        // Ensure target directory exists
-        if let Some(parent) = target_path.parent() {
-            fs::create_dir_all(parent).await
-                .with_context(|| format!("Failed to create target directory: {}", parent.display()))?;
-        }
+        // Ensure target directory exists and get it for processing
+        let target_directory = target_path.parent()
+            .context("Target path has no parent directory - cannot determine where to place output file")?;
+            
+        fs::create_dir_all(target_directory).await
+            .with_context(|| format!("Failed to create target directory: {}", target_directory.display()))?;
 
         // Use shared processing function (without stream display for batch mode)
         analyze_and_process_mkv_file(
             &file_path.to_path_buf(),
-            &target_path.parent().unwrap().to_path_buf(),
+            &target_directory.to_path_buf(),
             self.config.clone(),
             false,
             None,

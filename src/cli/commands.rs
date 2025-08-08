@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crate::config::Config;
 use crate::core::{BatchProcessor, analyze_and_process_mkv_file};
-use crate::utils::{check_dependencies, validate_mkv_file, validate_source_target_paths, collect_sonarr_environment};
+use crate::utils::{check_dependencies, validate_source_target_paths, collect_sonarr_environment};
 
 use super::args::CliArgs;
 
@@ -98,7 +98,8 @@ pub async fn run_cli() -> Result<()> {
         .with_context(|| format!("Failed to load configuration from: {}", args.config_path.display()))?;
     
     // Merge CLI arguments with config
-    config.merge_cli_args(args.audio_languages, args.subtitle_languages, args.dry_run);
+    config.merge_cli_args(args.audio_languages, args.subtitle_languages, args.dry_run)
+        .context("Failed to merge CLI arguments with configuration")?;
     
     // Prompt for missing values if running interactively
     config.prompt_missing_values()
@@ -130,9 +131,7 @@ async fn process_single_file(
     config: Config,
     sonarr_context: Option<crate::models::SonarrContext>,
 ) -> Result<()> {
-    // Validate MKV file
-    validate_mkv_file(mkv_file)
-        .with_context(|| format!("Invalid MKV file: {}", mkv_file.display()))?;
+    // MKV file validation is now handled in the processor with fallback behavior
     
     // Handle different target types
     let (target_directory, output_filename) = match target_type {
