@@ -137,6 +137,7 @@ impl Config {
         
         // Gracefully handle missing config file by using defaults
         if !path.exists() {
+            eprintln!("Missing config file: {}", path.display());
             return Ok(Self::default());
         }
         
