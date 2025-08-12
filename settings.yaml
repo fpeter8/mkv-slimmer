@@ -14,7 +14,8 @@ subtitles:
   keep_languages:
     - hun    # Hungarian (first preference)
     - und    # Undefined (second preference)
-    - "eng, Dialogue"  # English with title starting with "Dialogue"
+    - "eng, Dialogue" # English with title starting with "Dialogue"
+    - "eng, Full Subtitles" # English with title starting with "Full Subtitles"
     - eng    # English (any title)
     - jpn    # Japanese (fourth preference)
 

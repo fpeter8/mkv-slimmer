@@ -230,7 +230,7 @@ impl MkvAnalyzer {
             return Err(anyhow::anyhow!("No streams would be kept - refusing to process"));
         }
         
-        println!("🎯 Keeping {} stream(s): {}", 
+        println!("🎯 Keeping {} stream(s): {}",
             streams_to_keep.len(),
             streams_to_keep.iter()
                 .map(|&i| format!("#{}", i))
@@ -245,13 +245,14 @@ impl MkvAnalyzer {
         if !self.is_mkvmerge_necessary(&streams_to_keep) {
             return self.handle_no_processing_needed(&output_path).await;
         }
-                
+        
         // Build mkvmerge command
         let mut cmd = self.build_mkvmerge_command(&streams_to_keep, &output_path)?;
         
         // Check for dry-run mode before executing
         if self.config.processing.dry_run {
             println!("🚧 Dry-run mode: Would execute mkvmerge to create: {}", output_path.display());
+            println!("🚧 Dry-run mode: Command: '{:?}'", cmd);
             println!("✅ Dry-run completed successfully!");
             return Ok(());
         }
@@ -303,7 +304,7 @@ impl MkvAnalyzer {
         println!("📊 Original size: {}", crate::utils::format_size(original_size));
         println!("📊 New size: {}", crate::utils::format_size(new_size));
         if size_reduction > 0 {
-            println!("💾 Space saved: {} ({:.1}%)", 
+            println!("💾 Space saved: {} ({:.1}%)",
                 crate::utils::format_size(size_reduction),
                 (size_reduction as f64 / original_size as f64) * 100.0
             );
@@ -331,30 +332,34 @@ impl MkvAnalyzer {
             return true;
         }
         
+        if self.needs_forced_flag_changes(streams_to_keep) {
+            return true;
+        }
+        
         false // No processing needed
     }
     
     fn needs_default_flag_changes(&self, streams_to_keep: &[u32]) -> bool {
         // Get audio and subtitle streams to check
         let audio_streams: Vec<u32> = streams_to_keep.iter()
-            .filter(|&&index| {
-                self.streams.iter()
-                    .find(|s| s.index == index)
-                    .map(|s| s.stream_type == StreamType::Audio)
-                    .unwrap_or(false)
-            })
-            .copied()
-            .collect();
+                                                     .filter(|&&index| {
+                                                         self.streams.iter()
+                                                             .find(|s| s.index == index)
+                                                             .map(|s| s.stream_type == StreamType::Audio)
+                                                             .unwrap_or(false)
+                                                     })
+                                                     .copied()
+                                                     .collect();
         
         let subtitle_streams: Vec<u32> = streams_to_keep.iter()
-            .filter(|&&index| {
-                self.streams.iter()
-                    .find(|s| s.index == index)
-                    .map(|s| s.stream_type == StreamType::Subtitle)
-                    .unwrap_or(false)
-            })
-            .copied()
-            .collect();
+                                                        .filter(|&&index| {
+                                                            self.streams.iter()
+                                                                .find(|s| s.index == index)
+                                                                .map(|s| s.stream_type == StreamType::Subtitle)
+                                                                .unwrap_or(false)
+                                                        })
+                                                        .copied()
+                                                        .collect();
         
         // Check ALL audio streams for correct default flag state
         let desired_default_audio = self.get_default_audio_track(&audio_streams);
@@ -374,6 +379,55 @@ impl MkvAnalyzer {
                 let should_be_default = Some(subtitle_index) == desired_default_subtitle;
                 if stream.default != should_be_default {
                     return true; // This stream's default flag needs to change
+                }
+            }
+        }
+        
+        false
+    }
+    
+    fn needs_forced_flag_changes(&self, streams_to_keep: &[u32]) -> bool {
+        // Get audio and subtitle streams to check
+        let audio_streams: Vec<u32> = streams_to_keep.iter()
+                                                     .filter(|&&index| {
+                                                         self.streams.iter()
+                                                             .find(|s| s.index == index)
+                                                             .map(|s| s.stream_type == StreamType::Audio)
+                                                             .unwrap_or(false)
+                                                     })
+                                                     .copied()
+                                                     .collect();
+        
+        let subtitle_streams: Vec<u32> = streams_to_keep.iter()
+                                                        .filter(|&&index| {
+                                                            self.streams.iter()
+                                                                .find(|s| s.index == index)
+                                                                .map(|s| s.stream_type == StreamType::Subtitle)
+                                                                .unwrap_or(false)
+                                                        })
+                                                        .copied()
+                                                        .collect();
+        
+        if audio_streams.len() > 1 {
+            let desired_default_audio = self.get_default_audio_track(&audio_streams);
+            for &audio_index in &audio_streams {
+                if let Some(stream) = self.streams.iter().find(|s| s.index == audio_index) {
+                    let should_be_default = Some(audio_index) == desired_default_audio;
+                    if !should_be_default && stream.forced {
+                        return true;
+                    }
+                }
+            }
+        }
+        
+        if subtitle_streams.len() > 1 {
+            let desired_default_subtitle = self.get_default_subtitle_track(&subtitle_streams);
+            for &subtitle_index in &subtitle_streams {
+                if let Some(stream) = self.streams.iter().find(|s| s.index == subtitle_index) {
+                    let should_be_default = Some(subtitle_index) == desired_default_subtitle;
+                    if !should_be_default && stream.forced {
+                        return true;
+                    }
                 }
             }
         }
@@ -401,27 +455,27 @@ impl MkvAnalyzer {
                     }
                     Err(e) if e.kind() == std::io::ErrorKind::CrossesDevices => {
                         std::fs::copy(&self.file_path, output_path)
-                            .with_context(|| format!("Failed to copy file from {} to {}", 
+                            .with_context(|| format!("Failed to copy file from {} to {}",
                                 self.file_path.display(), output_path.display()))?;
                         std::fs::remove_file(&self.file_path)
                             .with_context(|| format!("Failed to remove source file: {}", self.file_path.display()))?;
                         println!("📦 Moved to: {} (via copy+delete)", output_path.display());
                         Ok(())
                     }
-                    Err(e) => Err(e).with_context(|| format!("Failed to move file from {} to {}", 
+                    Err(e) => Err(e).with_context(|| format!("Failed to move file from {} to {}",
                         self.file_path.display(), output_path.display())),
                 }
             }
             Some("Copy") => {
                 std::fs::copy(&self.file_path, output_path)
-                    .with_context(|| format!("Failed to copy file from {} to {}", 
+                    .with_context(|| format!("Failed to copy file from {} to {}",
                         self.file_path.display(), output_path.display()))?;
                 println!("📋 Copied to: {}", output_path.display());
                 Ok(())
             }
             Some("HardLink") => {
                 std::fs::hard_link(&self.file_path, output_path)
-                    .with_context(|| format!("Failed to hard link file from {} to {}", 
+                    .with_context(|| format!("Failed to hard link file from {} to {}",
                         self.file_path.display(), output_path.display()))?;
                 println!("🔗 Hard linked to: {}", output_path.display());
                 Ok(())
@@ -435,7 +489,7 @@ impl MkvAnalyzer {
                     }
                     Err(_) => {
                         std::fs::copy(&self.file_path, output_path)
-                            .with_context(|| format!("Failed to copy file from {} to {}", 
+                            .with_context(|| format!("Failed to copy file from {} to {}",
                                 self.file_path.display(), output_path.display()))?;
                         println!("📋 Copied to: {}", output_path.display());
                         Ok(())
@@ -452,7 +506,7 @@ impl MkvAnalyzer {
                     }
                     Err(_) => {
                         std::fs::copy(&self.file_path, output_path)
-                            .with_context(|| format!("Failed to copy file from {} to {}", 
+                            .with_context(|| format!("Failed to copy file from {} to {}",
                                 self.file_path.display(), output_path.display()))?;
                         println!("📋 Copied to: {}", output_path.display());
                         Ok(())
@@ -504,7 +558,7 @@ impl MkvAnalyzer {
                     if let Some(ref lang) = stream.language {
                         // Check if any preference matches this subtitle
                         self.config.subtitles.keep_languages.iter().any(|pref| {
-                            pref.language == *lang && 
+                            pref.language == *lang &&
                             match (&pref.title_prefix, &stream.title) {
                                 (Some(prefix), Some(title)) => {
                                     // Case-insensitive prefix matching
@@ -694,7 +748,8 @@ impl MkvAnalyzer {
             // Set all other audio tracks to non-default
             for &track in &audio_streams {
                 if track != default_audio {
-                    cmd.arg("--default-track-flag").arg(format!("{}:0", track));
+                    cmd.arg("--default-track-flag").arg(format!("{}:0", track))
+                       .arg("--forced-display-flag").arg(format!("{}:0", track));
                 }
             }
         }
@@ -706,13 +761,15 @@ impl MkvAnalyzer {
             // Set all other subtitle tracks to non-default
             for &track in &subtitle_streams {
                 if track != default_subtitle {
-                    cmd.arg("--default-track-flag").arg(format!("{}:0", track));
+                    cmd.arg("--default-track-flag").arg(format!("{}:0", track))
+                       .arg("--forced-display-flag").arg(format!("{}:0", track));
                 }
             }
         } else {
             // If no subtitle should be default, make sure all are set to non-default
             for &track in &subtitle_streams {
-                cmd.arg("--default-track-flag").arg(format!("{}:0", track));
+                cmd.arg("--default-track-flag").arg(format!("{}:0", track))
+                   .arg("--forced-display-flag").arg(format!("{}:0", track));
             }
         }
         
@@ -776,7 +833,7 @@ fn parse_framerate(framerate_str: &str) -> Option<f64> {
         let fraction_parts: Vec<&str> = framerate_str.split('/').collect();
         if fraction_parts.len() == 2 {
             if let (Ok(numerator), Ok(denominator)) = (
-                fraction_parts[0].parse::<f64>(), 
+                fraction_parts[0].parse::<f64>(),
                 fraction_parts[1].parse::<f64>()
             ) {
                 if denominator != 0.0 {
