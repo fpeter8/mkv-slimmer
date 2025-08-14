@@ -15,23 +15,6 @@ The mkv-slimmer project is a well-structured Rust application for optimizing MKV
 
 
 
-### 6. Error Information Leakage
-
-**Location:** `analyzer.rs` lines 270-285
-```rust
-return Err(anyhow::anyhow!(
-    "{}\n\nStderr: {}\nStdout: {}",
-    error_msg, stderr, stdout
-));
-```
-
-**Issue:** Full stderr/stdout output may expose sensitive information.
-
-**Recommendation:** Sanitize error messages:
-```rust
-let sanitized_stderr = sanitize_error_output(&stderr);
-return Err(anyhow::anyhow!("{}\n\nError details: {}", error_msg, sanitized_stderr));
-```
 
 ### 7. Race Conditions in File Operations
 
