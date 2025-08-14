@@ -19,25 +19,6 @@ The mkv-slimmer project is a well-structured Rust application for optimizing MKV
 
 ## Performance Optimizations (💡 Consider for Future Improvements)
 
-### 8. Inefficient Stream Grouping
-
-**Location:** `output.rs` lines 86-94
-```rust
-for stream in streams {
-    grouped_streams
-        .entry(stream.stream_type.clone())
-        .or_insert_with(Vec::new)
-        .push(stream);
-}
-```
-
-**Issue:** Repeated cloning of `stream_type` enum values.
-
-**Recommendation:** Implement `Copy` trait for `StreamType` or use references:
-```rust
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum StreamType { /* variants */ }
-```
 
 ### 9. String Allocations in Hot Paths
 

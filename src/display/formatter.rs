@@ -21,7 +21,7 @@ impl<'a> StreamDisplayer<'a> {
         
         for stream in streams {
             grouped_streams
-                .entry(stream.stream_type.clone())
+                .entry(stream.stream_type)
                 .or_insert_with(Vec::new)
                 .push(stream);
         }
