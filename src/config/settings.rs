@@ -5,10 +5,26 @@ use dialoguer::MultiSelect;
 
 use super::preferences::{AudioConfig, SubtitleConfig, ProcessingConfig, SubtitlePreference};
 
+/// Main configuration for mkv-slimmer processing
+///
+/// This struct contains all configuration options for stream processing,
+/// including audio and subtitle preferences, and processing behavior.
+/// Configuration can be loaded from YAML files and overridden by CLI arguments.
+///
+/// # Examples
+/// ```rust
+/// use mkv_slimmer::config::Config;
+/// 
+/// let config = Config::default();
+/// assert!(!config.audio.keep_languages.is_empty());
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
+    /// Configuration for audio stream processing
     pub audio: AudioConfig,
+    /// Configuration for subtitle stream processing  
     pub subtitles: SubtitleConfig,
+    /// General processing behavior settings
     pub processing: ProcessingConfig,
 }
 

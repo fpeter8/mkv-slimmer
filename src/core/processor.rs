@@ -6,8 +6,37 @@ use crate::models::{SonarrContext, ProcessingTask};
 use crate::display::StreamDisplayer;
 use super::analyzer::{analyze_mkv_streams, process_mkv_streams, handle_no_processing_needed_task};
 
-/// Process a ProcessingTask with global config and sonarr context
-/// This replaces the old analyze_and_process_mkv_file function
+/// Processes a single MKV file using a ProcessingTask with configuration
+///
+/// This is the main processing function that handles stream analysis, filtering,
+/// and mkvmerge execution. It replaces the original analyze_and_process_mkv_file
+/// function and provides a clean interface for both CLI and batch processing.
+///
+/// # Arguments
+/// * `task` - Pre-analyzed processing task containing file info and streams
+/// * `config` - Configuration for stream filtering and processing behavior  
+/// * `sonarr_context` - Optional Sonarr context for automated processing
+/// * `display_streams` - Whether to show stream information (for interactive mode)
+///
+/// # Returns
+/// `Ok(())` if processing completed successfully, `Err` with context on failure
+///
+/// # Examples
+/// ```rust
+/// use mkv_slimmer::core::{process_task, ProcessingTask};
+/// use mkv_slimmer::config::Config;
+/// use std::path::PathBuf;
+///
+/// # tokio_test::block_on(async {
+/// let task = ProcessingTask::new(
+///     PathBuf::from("input.mkv"), 
+///     PathBuf::from("output.mkv")
+/// );
+/// let config = Config::default();
+/// 
+/// let result = process_task(task, &config, None, true).await;
+/// # });
+/// ```
 pub async fn process_task(
     task: ProcessingTask,
     config: &Config,

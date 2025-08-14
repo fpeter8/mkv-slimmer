@@ -1,7 +1,25 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 
-/// Check if the file is a valid MKV file (returns bool, doesn't throw)
+/// Checks if a file is a valid MKV file without throwing errors
+///
+/// Performs basic validation including existence, file type, and extension checks.
+/// This is a non-throwing version suitable for filtering file lists.
+///
+/// # Arguments
+/// * `file_path` - Path to the file to validate
+///
+/// # Returns
+/// `true` if the file appears to be a valid MKV file, `false` otherwise
+///
+/// # Examples
+/// ```rust
+/// use mkv_slimmer::utils::is_valid_mkv_file;
+/// use std::path::Path;
+///
+/// assert_eq!(is_valid_mkv_file("movie.mkv"), false); // File doesn't exist
+/// assert_eq!(is_valid_mkv_file("document.txt"), false); // Wrong extension
+/// ```
 pub fn is_valid_mkv_file<P: AsRef<Path>>(file_path: P) -> bool {
     let path = file_path.as_ref();
     
@@ -64,7 +82,36 @@ pub fn validate_mkv_file<P: AsRef<Path>>(file_path: P) -> Result<()> {
     Ok(())
 }
 
-/// Validate that source and target paths are not nested within each other
+/// Validates that source and target paths are safe for batch processing
+///
+/// This function prevents dangerous directory relationships that could cause
+/// infinite loops or data corruption during recursive batch processing:
+/// - Same directory (source == target)  
+/// - Target nested in source (/movies → /movies/output)
+/// - Source nested in target (/movies/season1 → /movies)
+///
+/// Uses canonical paths to resolve symlinks and relative paths properly.
+///
+/// # Arguments
+/// * `source_path` - The source directory or file path
+/// * `target_path` - The target directory or file path  
+///
+/// # Returns
+/// `Ok(())` if paths are safe, `Err` describing the problem if not
+///
+/// # Examples
+/// ```rust
+/// use mkv_slimmer::utils::validate_source_target_paths;
+/// use std::path::Path;
+///
+/// // This would fail - same directory
+/// let result = validate_source_target_paths(
+///     Path::new("/movies"), 
+///     Path::new("/movies")
+/// );
+/// assert!(result.is_err());
+/// ```
+///
 /// This prevents scenarios like:
 /// - Source: /movies/season1, Target: /movies/season1/processed
 /// - Source: /movies/season1/episode1.mkv, Target: /movies

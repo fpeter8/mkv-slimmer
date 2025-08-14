@@ -8,6 +8,26 @@ use crate::utils::is_valid_mkv_file;
 use super::processor::analyze_and_process_mkv_file;
 use crate::models::SonarrContext;
 
+/// Processes multiple MKV files in batch operations
+///
+/// Supports both single directory and recursive directory processing with
+/// optional glob pattern filtering. Handles file discovery, validation,
+/// and sequential processing while collecting results and errors.
+///
+/// # Examples
+/// ```rust
+/// use mkv_slimmer::core::{BatchProcessor, Config};
+/// use std::path::PathBuf;
+///
+/// let processor = BatchProcessor::new(
+///     PathBuf::from("/input"), 
+///     PathBuf::from("/output"), 
+///     false,  // not recursive
+///     None,   // no filter pattern
+///     Config::default(),
+///     None    // no Sonarr context
+/// );
+/// ```
 pub struct BatchProcessor {
     input_path: PathBuf,
     target_directory: PathBuf,
@@ -17,10 +37,18 @@ pub struct BatchProcessor {
     sonarr_context: Option<SonarrContext>,
 }
 
+/// Contains the results of a batch processing operation
+///
+/// Tracks success/failure counts and maintains a map of specific errors
+/// encountered during processing for detailed reporting.
 pub struct BatchResult {
+    /// Total number of files discovered for processing
     pub total_files: usize,
+    /// Number of files processed successfully
     pub successful: usize,
+    /// Number of files that failed processing
     pub failed: usize,
+    /// Map of file paths to their specific error messages
     pub errors: HashMap<PathBuf, String>,
 }
 

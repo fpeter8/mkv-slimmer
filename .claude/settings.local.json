@@ -6,7 +6,8 @@
       "Bash(cargo:*)",
       "Bash(./target/release/mkv-slimmer:*)",
       "Bash(./target/debug/mkv-slimmer:*)",
-      "Bash(git fetch:*)"
+      "Bash(git fetch:*)",
+      "Bash(sed:*)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits"

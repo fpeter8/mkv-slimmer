@@ -1,6 +1,22 @@
 use clap::{Arg, Command, ArgAction};
 use std::path::PathBuf;
 
+/// Creates the clap Command structure for CLI argument parsing
+///
+/// Defines all command-line arguments, options, and help text for the application.
+/// This includes input/output paths, processing options, and configuration overrides.
+///
+/// # Returns
+/// A configured `Command` ready for parsing command-line arguments
+///
+/// # Examples
+/// ```rust
+/// use mkv_slimmer::cli::create_app;
+///
+/// let app = create_app();
+/// let matches = app.try_get_matches_from(vec!["mkv-slimmer", "input.mkv"]);
+/// assert!(matches.is_ok());
+/// ```
 pub fn create_app() -> Command {
     Command::new("mkv-slimmer")
         .version("0.1.0")

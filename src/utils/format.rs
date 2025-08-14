@@ -1,4 +1,23 @@
-/// Format size in human-readable format
+/// Formats a byte count into a human-readable size string
+///
+/// Converts bytes into appropriate units (B, KB, MB, GB, TB) with one decimal place.
+/// Uses binary (1024) conversion rather than decimal (1000).
+///
+/// # Arguments
+/// * `size_bytes` - The size in bytes to format
+///
+/// # Returns
+/// A formatted string with the size and appropriate unit
+///
+/// # Examples
+/// ```rust
+/// use mkv_slimmer::utils::format_size;
+///
+/// assert_eq!(format_size(0), "0.0 B");
+/// assert_eq!(format_size(1024), "1.0 KB"); 
+/// assert_eq!(format_size(1536), "1.5 KB");
+/// assert_eq!(format_size(1048576), "1.0 MB");
+/// ```
 pub fn format_size(size_bytes: u64) -> String {
     const SIZE_UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
     let mut size_value = size_bytes as f64;
