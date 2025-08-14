@@ -21,31 +21,6 @@ The mkv-slimmer project is a well-structured Rust application for optimizing MKV
 
 
 
-### 10. Suboptimal JSON Parsing
-
-**Location:** `analyzer.rs` lines 94-114
-```rust
-if let Some(data) = ffprobe_data {
-    if let Some(streams) = data["streams"].as_array() {
-        for (index, stream) in streams.iter().enumerate() {
-```
-
-**Issue:** Manual JSON traversal instead of structured deserialization.
-
-**Recommendation:** Define proper serde structs for ffprobe output:
-```rust
-#[derive(Deserialize)]
-struct FFProbeOutput {
-    streams: Vec<FFProbeStream>,
-}
-
-#[derive(Deserialize)]
-struct FFProbeStream {
-    codec_type: String,
-    codec_name: Option<String>,
-    // ... other fields
-}
-```
 
 ## Code Quality & Maintainability
 

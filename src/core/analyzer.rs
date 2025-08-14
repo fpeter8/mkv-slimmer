@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use crate::config::Config;
-use crate::models::{StreamInfo, StreamType, SonarrContext};
+use crate::models::{StreamInfo, StreamType, SonarrContext, FFProbeOutput};
 use crate::display::StreamDisplayer;
 
 struct StreamIndices {
@@ -103,9 +103,20 @@ impl MkvAnalyzer {
     ) -> Result<()> {
         // For now, focus on ffprobe data
         if let Some(data) = ffprobe_data {
-            if let Some(streams) = data["streams"].as_array() {
-                for (index, stream) in streams.iter().enumerate() {
-                    let stream_info = self.create_stream_info_from_ffprobe(index as u32, stream)?;
+            // Parse JSON into structured FFProbe output
+            match serde_json::from_value::<FFProbeOutput>(data) {
+                Ok(ffprobe_output) => {
+                    if let Some(streams) = ffprobe_output.streams {
+                        for (index, stream) in streams.iter().enumerate() {
+                            let stream_info = self.create_stream_info_from_ffprobe_struct(index as u32, stream)?;
+                            self.streams.push(stream_info);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Warning: Could not parse ffprobe output with serde: {}", e);
+                    // Fallback to minimal stream info
+                    let stream_info = StreamInfo::new(0, StreamType::Unknown);
                     self.streams.push(stream_info);
                 }
             }
@@ -117,6 +128,111 @@ impl MkvAnalyzer {
         }
         
         Ok(())
+    }
+    
+    fn create_stream_info_from_ffprobe_struct(
+        &self,
+        index: u32,
+        stream: &crate::models::FFProbeStream,
+    ) -> Result<StreamInfo> {
+        let codec_type = stream.codec_type.as_deref().unwrap_or("unknown");
+        let stream_type = match codec_type {
+            "video" => StreamType::Video,
+            "audio" => StreamType::Audio,
+            "subtitle" => StreamType::Subtitle,
+            "attachment" => StreamType::Attachment,
+            _ => StreamType::Unknown,
+        };
+        
+        let mut info = StreamInfo::new(index, stream_type);
+        
+        // Basic information
+        info.codec = stream.codec_name
+            .as_ref()
+            .or(stream.codec_long_name.as_ref())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+        
+        // Language and metadata from tags
+        if let Some(tags) = &stream.tags {
+            info.language = tags.language.clone();
+            info.title = tags.title.clone();
+            
+            // Check for DURATION tag (format: "00:01:31.010000000")
+            if let Some(duration_str) = &tags.duration {
+                if let Some(duration_seconds) = parse_duration_tag(duration_str) {
+                    info.duration_seconds = Some(duration_seconds);
+                }
+            }
+            
+            // Check for NUMBER_OF_BYTES tag
+            if let Some(bytes_str) = &tags.number_of_bytes {
+                if let Ok(bytes) = bytes_str.parse::<u64>() {
+                    info.size_bytes = Some(bytes);
+                }
+            }
+        }
+        
+        // Disposition (default/forced flags)
+        if let Some(disposition) = &stream.disposition {
+            info.default = disposition.default.unwrap_or(0) == 1;
+            info.forced = disposition.forced.unwrap_or(0) == 1;
+        }
+        
+        // Size and duration (from standard fields if tags didn't provide them)
+        if let Some(bit_rate_str) = &stream.bit_rate {
+            if let Ok(bit_rate) = bit_rate_str.parse::<u64>() {
+                info.bitrate = Some(bit_rate);
+                
+                // Use standard duration field if we didn't get it from tags
+                if info.duration_seconds.is_none() {
+                    if let Some(duration_str) = &stream.duration {
+                        if let Ok(duration) = duration_str.parse::<f64>() {
+                            info.duration_seconds = Some(duration);
+                        }
+                    }
+                }
+                
+                // Calculate size from bitrate and duration if we didn't get it from tags
+                if info.size_bytes.is_none() {
+                    if let Some(duration) = info.duration_seconds {
+                        info.size_bytes = Some((bit_rate * duration as u64) / 8);
+                    }
+                }
+            }
+        }
+        
+        // Type-specific information
+        match info.stream_type {
+            StreamType::Video => {
+                let width = stream.width.unwrap_or(0);
+                let height = stream.height.unwrap_or(0);
+                info.resolution = Some(format!("{}x{}", width, height));
+                
+                if let Some(fps_str) = &stream.r_frame_rate {
+                    info.framerate = parse_framerate(fps_str);
+                }
+                
+                // Simple HDR detection
+                info.hdr = Some(
+                    stream.color_space
+                        .as_ref()
+                        .map(|color_space| color_space.to_lowercase().contains("bt2020"))
+                        .unwrap_or(false)
+                );
+            }
+            StreamType::Audio => {
+                info.channels = stream.channels.map(|c| c as u32);
+                info.sample_rate = stream.sample_rate.as_ref()
+                    .and_then(|sr| sr.parse::<u32>().ok());
+            }
+            StreamType::Subtitle => {
+                info.subtitle_format = Some(info.codec.clone());
+            }
+            _ => {}
+        }
+        
+        Ok(info)
     }
     
     fn create_stream_info_from_ffprobe(
@@ -1078,10 +1194,22 @@ fn extract_streams_from_data(
     
     // For now, focus on ffprobe data
     if let Some(data) = ffprobe_data {
-        if let Some(stream_array) = data["streams"].as_array() {
-            for (index, stream) in stream_array.iter().enumerate() {
-                let stream_info = create_stream_info_from_ffprobe(index as u32, stream)?;
+        // Parse JSON into structured FFProbe output
+        match serde_json::from_value::<FFProbeOutput>(data) {
+            Ok(ffprobe_output) => {
+                if let Some(stream_array) = ffprobe_output.streams {
+                    for (index, stream) in stream_array.iter().enumerate() {
+                        let stream_info = create_stream_info_from_ffprobe_struct(index as u32, stream)?;
+                        streams.push(stream_info);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Warning: Could not parse ffprobe output with serde: {}", e);
+                // Fallback to minimal stream info
+                let stream_info = StreamInfo::new(0, StreamType::Unknown);
                 streams.push(stream_info);
+                return Ok(streams);
             }
         }
     } else {
@@ -1092,6 +1220,110 @@ fn extract_streams_from_data(
     }
     
     Ok(streams)
+}
+
+fn create_stream_info_from_ffprobe_struct(
+    index: u32,
+    stream: &crate::models::FFProbeStream,
+) -> Result<StreamInfo> {
+    let codec_type = stream.codec_type.as_deref().unwrap_or("unknown");
+    let stream_type = match codec_type {
+        "video" => StreamType::Video,
+        "audio" => StreamType::Audio,
+        "subtitle" => StreamType::Subtitle,
+        "attachment" => StreamType::Attachment,
+        _ => StreamType::Unknown,
+    };
+    
+    let mut info = StreamInfo::new(index, stream_type);
+    
+    // Basic information
+    info.codec = stream.codec_name
+        .as_ref()
+        .or(stream.codec_long_name.as_ref())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    
+    // Language and metadata from tags
+    if let Some(tags) = &stream.tags {
+        info.language = tags.language.clone();
+        info.title = tags.title.clone();
+        
+        // Check for DURATION tag (format: "00:01:31.010000000")
+        if let Some(duration_str) = &tags.duration {
+            if let Some(duration_seconds) = parse_duration_tag(duration_str) {
+                info.duration_seconds = Some(duration_seconds);
+            }
+        }
+        
+        // Check for NUMBER_OF_BYTES tag
+        if let Some(bytes_str) = &tags.number_of_bytes {
+            if let Ok(bytes) = bytes_str.parse::<u64>() {
+                info.size_bytes = Some(bytes);
+            }
+        }
+    }
+    
+    // Disposition (default/forced flags)
+    if let Some(disposition) = &stream.disposition {
+        info.default = disposition.default.unwrap_or(0) == 1;
+        info.forced = disposition.forced.unwrap_or(0) == 1;
+    }
+    
+    // Size and duration (from standard fields if tags didn't provide them)
+    if let Some(bit_rate_str) = &stream.bit_rate {
+        if let Ok(bit_rate) = bit_rate_str.parse::<u64>() {
+            info.bitrate = Some(bit_rate);
+            
+            // Use standard duration field if we didn't get it from tags
+            if info.duration_seconds.is_none() {
+                if let Some(duration_str) = &stream.duration {
+                    if let Ok(duration) = duration_str.parse::<f64>() {
+                        info.duration_seconds = Some(duration);
+                    }
+                }
+            }
+            
+            // Calculate size from bitrate and duration if we didn't get it from tags
+            if info.size_bytes.is_none() {
+                if let Some(duration) = info.duration_seconds {
+                    info.size_bytes = Some((bit_rate * duration as u64) / 8);
+                }
+            }
+        }
+    }
+    
+    // Type-specific information
+    match info.stream_type {
+        StreamType::Video => {
+            let width = stream.width.unwrap_or(0);
+            let height = stream.height.unwrap_or(0);
+            info.resolution = Some(format!("{}x{}", width, height));
+            
+            if let Some(fps_str) = &stream.r_frame_rate {
+                info.framerate = parse_framerate(fps_str);
+            }
+            
+            // Simple HDR detection
+            info.hdr = Some(
+                stream.color_space
+                    .as_ref()
+                    .map(|color_space| color_space.to_lowercase().contains("bt2020"))
+                    .unwrap_or(false)
+            );
+        }
+        StreamType::Audio => {
+            info.channels = stream.channels.map(|c| c as u32);
+            info.sample_rate = stream.sample_rate.as_ref()
+                .and_then(|sr| sr.parse::<u32>().ok());
+        }
+        StreamType::Subtitle => {
+            info.subtitle_format = Some(info.codec.clone());
+        }
+        _ => {}
+    }
+    
+    Ok(info)
 }
 
 fn create_stream_info_from_ffprobe(
