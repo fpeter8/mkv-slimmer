@@ -8,21 +8,6 @@ The mkv-slimmer project is a well-structured Rust application for optimizing MKV
 
 ## Critical Issues (🚨 Must Fix)
 
-### 1. Unsafe Usage of `unwrap()` and `expect()` in Critical Paths
-
-**Location:** Throughout the codebase, particularly in `cli.rs` lines 104-108
-```rust
-let input_path = matches.get_one::<PathBuf>("input_path")
-    .expect("input_path argument is required but was not provided by clap");
-```
-
-**Issue:** While these are technically safe due to clap validation, they violate the project's stated preference for `expect` with descriptive messages.
-
-**Recommendation:** Replace generic expects with descriptive error messages:
-```rust
-let input_path = matches.get_one::<PathBuf>("input_path")
-    .expect("Required input_path argument should have been validated by clap - this indicates a programming error");
-```
 
 ### 2. Path Traversal Vulnerability in Batch Processing
 
