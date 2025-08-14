@@ -4,6 +4,7 @@ use std::process::Command;
 
 use crate::config::Config;
 use crate::models::{StreamInfo, StreamType, SonarrContext, FFProbeOutput};
+use crate::error::{processing_error, suggest_solution};
 use crate::display::StreamDisplayer;
 
 struct StreamIndices {
@@ -403,12 +404,23 @@ impl MkvAnalyzer {
                 format!("mkvmerge failed with exit code {}", output.status.code().unwrap_or(-1))
             };
             
-            return Err(anyhow::anyhow!(
-                "{}\n\nStderr: {}\nStdout: {}",
-                error_msg,
-                stderr,
-                stdout
-            ));
+            // Create enhanced error message with suggestion
+            let mut enhanced_error = processing_error(
+                &self.file_path,
+                "mkvmerge execution", 
+                &error_msg
+            );
+            
+            // Add technical details for debugging
+            let details = format!("\n📋 Technical Details:\n   Stderr: {}\n   Stdout: {}", stderr, stdout);
+            enhanced_error = anyhow::anyhow!("{}{}", enhanced_error, details);
+            
+            // Add suggestion if available
+            if let Some(suggestion) = suggest_solution(&stderr) {
+                enhanced_error = anyhow::anyhow!("{}\n   {}", enhanced_error, suggestion);
+            }
+            
+            return Err(enhanced_error);
         }
         
         // Show success message with file info

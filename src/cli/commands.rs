@@ -3,6 +3,7 @@ use colored::*;
 use std::path::PathBuf;
 
 use crate::config::Config;
+use crate::error::{file_validation_error, config_error};
 use crate::models::SonarrContext;
 use crate::utils::{check_dependencies, collect_sonarr_environment};
 
@@ -101,7 +102,7 @@ pub async fn prepare_processing_settings() -> Result<ProcessingSettings> {
         }
         (false, false, _) => {
             // Input doesn't exist
-            anyhow::bail!("Input path does not exist: {}", args.input_path.display());
+            return Err(file_validation_error(&args.input_path, "Input path does not exist. Check that the file or directory is accessible."));
         }
         (true, true, _) => {
             // This shouldn't happen - a path can't be both file and directory

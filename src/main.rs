@@ -4,6 +4,7 @@ mod core;
 mod models;
 mod display;
 mod utils;
+mod error;
 
 use anyhow::{Context, Result};
 use std::path::Path;

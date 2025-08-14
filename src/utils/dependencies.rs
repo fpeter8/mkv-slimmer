@@ -1,4 +1,5 @@
 use anyhow::Result;
+use crate::error::dependency_error;
 
 /// Check for required external dependencies
 pub fn check_dependencies() -> Result<Vec<String>> {
@@ -11,9 +12,9 @@ pub fn check_dependencies() -> Result<Vec<String>> {
     
     // Check for mkvmerge (required for actual modifications)
     if which::which("mkvmerge").is_err() {
-        return Err(anyhow::anyhow!(
-            "mkvmerge is not available. Please install MKVToolNix to process MKV files.\n\
-            Visit: https://mkvtoolnix.download/"
+        return Err(dependency_error(
+            "mkvmerge",
+            "Install MKVToolNix from https://mkvtoolnix.download/ or use your package manager (apt install mkvtoolnix, brew install mkvtoolnix, etc.)"
         ));
     }
     

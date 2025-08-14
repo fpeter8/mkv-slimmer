@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use std::path::Path;
+use crate::error::{file_validation_error, path_safety_error};
 
 /// Checks if a file is a valid MKV file without throwing errors
 ///
@@ -47,21 +48,21 @@ pub fn validate_mkv_file<P: AsRef<Path>>(file_path: P) -> Result<()> {
     let path = file_path.as_ref();
     
     if !path.exists() {
-        anyhow::bail!("File not found: {}", path.display());
+        return Err(file_validation_error(path, "File not found. Check the path is correct."));
     }
     
     if !path.is_file() {
-        anyhow::bail!("Not a file: {}", path.display());
+        return Err(file_validation_error(path, "Path points to a directory, not a file."));
     }
     
     // Check file extension
     if let Some(ext) = path.extension() {
         let ext_str = ext.to_string_lossy().to_lowercase();
         if !["mkv", "mka", "mks"].contains(&ext_str.as_str()) {
-            anyhow::bail!("Not an MKV file: {}", path.display());
+            return Err(file_validation_error(path, &format!("File has extension '{}' but expected .mkv, .mka, or .mks", ext_str)));
         }
     } else {
-        anyhow::bail!("File has no extension: {}", path.display());
+        return Err(file_validation_error(path, "File has no extension. Expected .mkv, .mka, or .mks file."));
     }
     
     // Check file is readable
@@ -136,29 +137,29 @@ pub fn validate_source_target_paths(source_path: &Path, target_path: &Path) -> R
     
     // Check if paths are exactly the same
     if source_canonical == target_canonical {
-        anyhow::bail!(
-            "Source and target paths cannot be the same.\nSource: {}\nTarget: {}", 
-            source_path.display(), 
-            target_path.display()
-        );
+        return Err(path_safety_error(
+            source_path, 
+            target_path, 
+            "Source and target paths are identical - this would overwrite your original files"
+        ));
     }
     
     // Check if target is nested within source
     if target_canonical.starts_with(&source_canonical) {
-        anyhow::bail!(
-            "Target path cannot be nested within the source path.\nSource: {}\nTarget: {}\nThis would cause the output to be processed as input in recursive mode.", 
-            source_path.display(), 
-            target_path.display()
-        );
+        return Err(path_safety_error(
+            source_path, 
+            target_path, 
+            "Target is inside source directory - this creates infinite loops in recursive mode"
+        ));
     }
     
     // Check if source is nested within target
     if source_canonical.starts_with(&target_canonical) {
-        anyhow::bail!(
-            "Source path cannot be nested within the target path.\nSource: {}\nTarget: {}\nThis would overwrite source files during processing.", 
-            source_path.display(), 
-            target_path.display()
-        );
+        return Err(path_safety_error(
+            source_path, 
+            target_path, 
+            "Source is inside target directory - this would overwrite original files"
+        ));
     }
     
     Ok(())

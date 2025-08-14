@@ -1,5 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use crate::error::config_error;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SubtitlePreference {
@@ -16,7 +17,10 @@ impl SubtitlePreference {
             let title_prefix = title.trim().to_string();
             
             if language.is_empty() {
-                anyhow::bail!("Language cannot be empty in subtitle preference: '{}'", s);
+                return Err(config_error(
+                    "Subtitle language preference", 
+                    &format!("Language code cannot be empty in preference '{}'. Use format 'language' or 'language, title prefix'", s)
+                ));
             }
             
             // Empty title prefix is valid but treated as None
@@ -30,7 +34,10 @@ impl SubtitlePreference {
         } else {
             let language = s.trim().to_string();
             if language.is_empty() {
-                anyhow::bail!("Language cannot be empty in subtitle preference: '{}'", s);
+                return Err(config_error(
+                    "Subtitle language preference", 
+                    &format!("Language code cannot be empty in preference '{}'. Use format 'language' or 'language, title prefix'", s)
+                ));
             }
             Ok(Self { language, title_prefix: None })
         }
