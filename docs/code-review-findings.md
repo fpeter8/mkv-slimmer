@@ -10,35 +10,6 @@ The mkv-slimmer project is a well-structured Rust application for optimizing MKV
 
 
 
-### 3. Resource Exhaustion in Stream Processing
-
-**Location:** `analyzer.rs` lines 322-335, inefficient stream filtering
-```rust
-fn is_mkvmerge_necessary(&self, streams_to_keep: &[u32]) -> bool {
-    // Multiple iterations over streams
-    if streams_to_keep.len() != all_stream_count { return true; }
-    if self.needs_default_flag_changes(streams_to_keep) { return true; }
-    false
-}
-```
-
-**Issue:** Multiple O(n²) operations on large stream collections could cause performance degradation.
-
-**Recommendation:** Pre-compute stream indices by type to avoid repeated filtering:
-```rust
-struct StreamIndices {
-    video: Vec<u32>,
-    audio: Vec<u32>,
-    subtitle: Vec<u32>,
-    attachment: Vec<u32>,
-}
-
-impl MkvAnalyzer {
-    fn build_stream_indices(&self) -> StreamIndices {
-        // Build once, reuse multiple times
-    }
-}
-```
 
 ## Warnings (⚠️ Should Fix Before Production)
 
