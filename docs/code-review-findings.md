@@ -20,13 +20,6 @@ The mkv-slimmer project is a well-structured Rust application for optimizing MKV
 ## Performance Optimizations (💡 Consider for Future Improvements)
 
 
-### 9. String Allocations in Hot Paths
-
-**Location:** Multiple locations, especially in stream processing loops
-
-**Issue:** Unnecessary string allocations in display formatting.
-
-**Recommendation:** Use `Cow<str>` or string interning for commonly used strings.
 
 ### 10. Suboptimal JSON Parsing
 
