@@ -14,28 +14,6 @@ The mkv-slimmer project is a well-structured Rust application for optimizing MKV
 ## Warnings (⚠️ Should Fix Before Production)
 
 
-### 5. Memory Safety Concerns with External Commands
-
-**Location:** `analyzer.rs` lines 44-52, `utils.rs` lines 14-20
-```rust
-let output = Command::new("ffprobe")
-    .args([/* many args */])
-    .output();
-```
-
-**Issue:** No timeout or resource limits on external command execution.
-
-**Recommendation:** Add timeout and resource constraints:
-```rust
-use tokio::time::timeout;
-use std::time::Duration;
-
-let output = timeout(Duration::from_secs(30), 
-    tokio::process::Command::new("ffprobe")
-        .args([/* args */])
-        .output()
-).await??;
-```
 
 ### 6. Error Information Leakage
 
