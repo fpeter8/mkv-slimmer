@@ -13,22 +13,6 @@ The mkv-slimmer project is a well-structured Rust application for optimizing MKV
 
 ## Warnings (⚠️ Should Fix Before Production)
 
-### 4. Insufficient Input Validation
-
-**Location:** `config.rs` lines 171-176
-```rust
-.unwrap_or_else(|e| {
-    eprintln!("Error parsing subtitle language: {}", e);
-    std::process::exit(1);
-});
-```
-
-**Issue:** Direct `std::process::exit(1)` bypasses proper error handling and cleanup.
-
-**Recommendation:** Return error instead of exiting:
-```rust
-.map_err(|e| anyhow::anyhow!("Failed to parse subtitle language: {}", e))?
-```
 
 ### 5. Memory Safety Concerns with External Commands
 
