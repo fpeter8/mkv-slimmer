@@ -601,15 +601,26 @@ impl MkvAnalyzer {
         let output_path = self.target_directory.join(output_filename);
         
         // Verify we can write to the target directory
-        if let Err(e) = std::fs::File::create(&output_path).and_then(|f| {
-            std::fs::remove_file(&output_path)?;
-            Ok(f)
-        }) {
-            return Err(anyhow::anyhow!(
-                "Cannot write to target directory {}: {}",
-                self.target_directory.display(),
-                e
-            ));
+        // Create temp file to test write permissions, then clean up
+        match std::fs::File::create(&output_path) {
+            Ok(_temp_file) => {
+                // File created successfully, now remove it
+                // Still has race window but minimized by using the same variable
+                if let Err(e) = std::fs::remove_file(&output_path) {
+                    return Err(anyhow::anyhow!(
+                        "Cannot clean up test file in target directory {}: {}",
+                        self.target_directory.display(),
+                        e
+                    ));
+                }
+            }
+            Err(e) => {
+                return Err(anyhow::anyhow!(
+                    "Cannot write to target directory {}: {}",
+                    self.target_directory.display(),
+                    e
+                ));
+            }
         }
         
         Ok(output_path)
