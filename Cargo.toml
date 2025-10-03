@@ -6,16 +6,16 @@ description = "Tool to analyze and remove unnecessary streams from MKV files"
 authors = ["Peter Farkas"]
 
 [dependencies]
-clap = { version = "4.4", features = ["derive"] }
-serde = { version = "1.0", features = ["derive"] }
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
-serde_json = "1.0"
-anyhow = "1.0"
-tokio = { version = "1.0", features = ["full"] }
-matroska = "0.30.0"
-tabled = "0.20.0"
-colored = "3.0.0"
-dialoguer = "0.11"
-which = "8.0.0"
+serde_json = "1"
+anyhow = "1"
+tokio = { version = "1", features = ["full"] }
+matroska = "0.30"
+tabled = "0.20"
+colored = "3"
+dialoguer = "0.12"
+which = "8"
 atty = "0.2"
 glob = "0.3"

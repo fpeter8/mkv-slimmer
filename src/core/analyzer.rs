@@ -1616,6 +1616,7 @@ fn build_mkvmerge_command_for_task(
             if track != default_audio {
                 cmd.arg("--default-track-flag").arg(format!("{}:0", track));
             }
+            cmd.arg("--forced-display-flag").arg(format!("{}:0", track));
         }
     }
     
@@ -1628,13 +1629,17 @@ fn build_mkvmerge_command_for_task(
             if track != default_subtitle {
                 cmd.arg("--default-track-flag").arg(format!("{}:0", track));
             }
+            cmd.arg("--forced-display-flag").arg(format!("{}:0", track));
         }
     } else {
         // If no subtitle should be default, make sure all are set to non-default
         for &track in &subtitle_streams {
             cmd.arg("--default-track-flag").arg(format!("{}:0", track));
+            cmd.arg("--forced-display-flag").arg(format!("{}:0", track));
         }
     }
+    
+    
     
     // Input file
     cmd.arg(&task.source_file);
