@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 use std::process::Command;
+use std::os::unix::process::ExitStatusExt;
 
 use crate::config::Config;
 use crate::models::{StreamInfo, StreamType, SonarrContext, FFProbeOutput};
@@ -1049,22 +1050,29 @@ pub async fn process_mkv_streams(
     
     let output_path = task.generate_output_path()?;
     
-    if config.processing.dry_run {
-        println!("🔍 Dry run: Would process streams and save to {}", output_path.display());
-        return Ok(());
-    }
-    
     // Build and execute mkvmerge command
     let mut cmd = build_mkvmerge_command_for_task(task, &streams_to_keep, &output_path, config)?;
-    
+
+    // Check for dry-run mode before executing
+    if config.processing.dry_run {
+        println!("🚧 Dry-run mode: Would execute mkvmerge to create: {}", output_path.display());
+        println!("🚧 Dry-run mode: Command: '{:?}'", cmd);
+        println!("✅ Dry-run completed successfully!");
+        return Ok(());
+    }
+
     let output = cmd.output()
         .with_context(|| "Failed to execute mkvmerge command")?;
     
     if !output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(anyhow::anyhow!(
-            "mkvmerge failed with exit code {:?}:\n{}",
+            "mkvmerge failed with exit code {:?}, termination signal {:?}, stop signal {:?}:\n{}\n{}",
             output.status.code(),
+            output.status.signal(),
+            output.status.stopped_signal(),
+            stdout,
             stderr
         ));
     }
@@ -1495,7 +1503,7 @@ fn build_mkvmerge_command_for_task(
     let mut cmd = Command::new("mkvmerge");
     
     // Output file
-    cmd.arg("-o").arg(output_path);
+    cmd.arg("-v").arg("-o").arg(output_path);
     
     // Separate streams by type
     let video_streams: Vec<u32> = streams_to_keep.iter()
