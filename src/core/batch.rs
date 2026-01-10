@@ -1,12 +1,13 @@
 use anyhow::{Context, Result};
-use std::path::{Path, PathBuf};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use tokio::fs;
 
+use super::analyzer::analyze_mkv_streams;
+use super::processor::{handle_non_mkv_file, process_task};
 use crate::config::Config;
+use crate::models::{ProcessingTask, SonarrContext};
 use crate::utils::is_valid_mkv_file;
-use super::processor::analyze_and_process_mkv_file;
-use crate::models::SonarrContext;
 
 /// Processes multiple MKV files in batch operations
 ///
@@ -20,8 +21,8 @@ use crate::models::SonarrContext;
 /// use std::path::PathBuf;
 ///
 /// let processor = BatchProcessor::new(
-///     PathBuf::from("/input"), 
-///     PathBuf::from("/output"), 
+///     PathBuf::from("/input"),
+///     PathBuf::from("/output"),
 ///     false,  // not recursive
 ///     None,   // no filter pattern
 ///     Config::default(),
@@ -86,7 +87,7 @@ impl BatchProcessor {
         println!();
 
         let mkv_files = self.collect_mkv_files()?;
-        
+
         if mkv_files.is_empty() {
             println!("⚠️  No MKV files found matching criteria");
             return Ok(BatchResult {
@@ -104,9 +105,13 @@ impl BatchProcessor {
         let mut errors = HashMap::new();
 
         for (index, file_path) in mkv_files.iter().enumerate() {
-            println!("🎯 Processing file {} of {}: {}", 
-                index + 1, mkv_files.len(), file_path.display());
-            
+            println!(
+                "🎯 Processing file {} of {}: {}",
+                index + 1,
+                mkv_files.len(),
+                file_path.display()
+            );
+
             match self.process_single_file(file_path).await {
                 Ok(()) => {
                     successful += 1;
@@ -116,7 +121,11 @@ impl BatchProcessor {
                     failed += 1;
                     let error_msg = format!("{:#}", e);
                     errors.insert(file_path.clone(), error_msg.clone());
-                    println!("❌ Failed to process: {} - {}\n", file_path.display(), error_msg);
+                    println!(
+                        "❌ Failed to process: {} - {}\n",
+                        file_path.display(),
+                        error_msg
+                    );
                 }
             }
         }
@@ -156,7 +165,7 @@ impl BatchProcessor {
         for entry in entries {
             let entry = entry?;
             let path = entry.path();
-            
+
             if path.is_file() && is_valid_mkv_file(&path) {
                 files.push(path);
             }
@@ -172,7 +181,7 @@ impl BatchProcessor {
         for entry in entries {
             let entry = entry?;
             let path = entry.path();
-            
+
             if path.is_file() && is_valid_mkv_file(&path) {
                 files.push(path);
             } else if path.is_dir() {
@@ -193,13 +202,11 @@ impl BatchProcessor {
                     .with_context(|| format!("Failed to strip prefix from {}", file.display()))?
             } else {
                 // For non-recursive mode, match against filename only
-                file.file_name()
-                    .context("Failed to get filename")?
-                    .as_ref()
+                file.file_name().context("Failed to get filename")?.as_ref()
             };
 
             let match_str = match_path.to_string_lossy();
-            
+
             // Use glob pattern matching
             if glob::Pattern::new(pattern)
                 .with_context(|| format!("Invalid glob pattern: {}", pattern))?
@@ -215,43 +222,73 @@ impl BatchProcessor {
     async fn process_single_file(&self, file_path: &Path) -> Result<()> {
         // Calculate target path
         let target_path = self.calculate_target_path(file_path)?;
-        
-        // Ensure target directory exists and get it for processing
-        let target_directory = target_path.parent()
-            .context("Target path has no parent directory - cannot determine where to place output file")?;
-            
-        fs::create_dir_all(target_directory).await
-            .with_context(|| format!("Failed to create target directory: {}", target_directory.display()))?;
 
-        // Use shared processing function (without stream display for batch mode)
-        // NOTE: This uses the legacy function which internally creates ProcessingTask
-        // This maintains compatibility while using the new architecture
-        analyze_and_process_mkv_file(
-            &file_path.to_path_buf(),
-            &target_directory.to_path_buf(),
-            self.config.clone(),
-            false,
-            None,
-            self.sonarr_context.clone(),
-        ).await
+        // Ensure target directory exists and get it for processing
+        let target_directory = target_path.parent().context(
+            "Target path has no parent directory - cannot determine where to place output file",
+        )?;
+
+        fs::create_dir_all(target_directory)
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to create target directory: {}",
+                    target_directory.display()
+                )
+            })?;
+
+        // Check if file is valid MKV - if not, handle immediately
+        if !is_valid_mkv_file(file_path) {
+            println!("⚠️  File is not a valid MKV file: {}", file_path.display());
+            println!("🔄 Falling back to copying original file (no processing needed)");
+
+            return handle_non_mkv_file(
+                file_path,
+                target_directory,
+                None,
+                &self.config,
+                self.sonarr_context.as_ref(),
+            )
+            .await;
+        }
+
+        // Analyze streams and create ProcessingTask
+        let streams = analyze_mkv_streams(file_path)
+            .await
+            .with_context(|| format!("Failed to analyze MKV streams: {}", file_path.display()))?;
+
+        let task = ProcessingTask::new(
+            file_path.to_path_buf(),
+            target_directory.to_path_buf(),
+            streams,
+            None, // No custom output filename in batch mode
+        );
+
+        // Process the task (without stream display for batch mode)
+        process_task(task, &self.config, self.sonarr_context.as_ref(), false).await
     }
 
     fn calculate_target_path(&self, source_file: &Path) -> Result<PathBuf> {
-        let filename = source_file.file_name()
-            .context("Failed to get filename")?;
+        let filename = source_file.file_name().context("Failed to get filename")?;
 
         if self.recursive {
             // Preserve directory structure
-            let relative_path = source_file.strip_prefix(&self.input_path)
-                .with_context(|| format!("Failed to strip prefix from {}", source_file.display()))?;
-            
+            let relative_path = source_file
+                .strip_prefix(&self.input_path)
+                .with_context(|| {
+                    format!("Failed to strip prefix from {}", source_file.display())
+                })?;
+
             // Validate no path traversal components
             for component in relative_path.components() {
                 if matches!(component, std::path::Component::ParentDir) {
-                    anyhow::bail!("Path traversal attempt detected in: {}", relative_path.display());
+                    anyhow::bail!(
+                        "Path traversal attempt detected in: {}",
+                        relative_path.display()
+                    );
                 }
             }
-            
+
             Ok(self.target_directory.join(relative_path))
         } else {
             // Simple filename in target directory
@@ -266,14 +303,14 @@ impl BatchResult {
         println!("   Total files: {}", self.total_files);
         println!("   Successful: {}", self.successful);
         println!("   Failed: {}", self.failed);
-        
+
         if !self.errors.is_empty() {
             println!("\n❌ Failed files:");
             for (file, error) in &self.errors {
                 println!("   {}: {}", file.display(), error);
             }
         }
-        
+
         if self.successful == self.total_files {
             println!("\n🎉 All files processed successfully!");
         } else if self.successful > 0 {

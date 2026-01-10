@@ -3,7 +3,7 @@ use colored::*;
 use std::path::PathBuf;
 
 use crate::config::Config;
-use crate::error::{file_validation_error, config_error};
+use crate::error::{config_error, file_validation_error};
 use crate::models::SonarrContext;
 use crate::utils::{check_dependencies, collect_sonarr_environment};
 
@@ -43,7 +43,10 @@ pub fn determine_target_type(target_path: &PathBuf) -> TargetType {
         // Check if it has an extension (common indicator of a file)
         if target_path.extension().is_some() {
             TargetType::File
-        } else if target_path.to_string_lossy().ends_with(std::path::MAIN_SEPARATOR) {
+        } else if target_path
+            .to_string_lossy()
+            .ends_with(std::path::MAIN_SEPARATOR)
+        {
             // Ends with path separator, likely a directory
             TargetType::Directory
         } else {
@@ -61,7 +64,10 @@ pub async fn prepare_processing_settings() -> Result<ProcessingSettings> {
     // Check dependencies
     let missing_deps = check_dependencies()?;
     if !missing_deps.is_empty() {
-        eprintln!("Warning: Missing optional dependencies: {}", missing_deps.join(", "));
+        eprintln!(
+            "Warning: Missing optional dependencies: {}",
+            missing_deps.join(", ")
+        );
         eprintln!("Some features may be limited. Install ffmpeg for full functionality.\n");
     }
 
@@ -102,7 +108,10 @@ pub async fn prepare_processing_settings() -> Result<ProcessingSettings> {
         }
         (false, false, _) => {
             // Input doesn't exist
-            return Err(file_validation_error(&args.input_path, "Input path does not exist. Check that the file or directory is accessible."));
+            return Err(file_validation_error(
+                &args.input_path,
+                "Input path does not exist. Check that the file or directory is accessible.",
+            ));
         }
         (true, true, _) => {
             // This shouldn't happen - a path can't be both file and directory
@@ -111,15 +120,21 @@ pub async fn prepare_processing_settings() -> Result<ProcessingSettings> {
     }
 
     // Load configuration
-    let mut config = Config::from_yaml(&args.config_path)
-        .with_context(|| format!("Failed to load configuration from: {}", args.config_path.display()))?;
-    
+    let mut config = Config::from_yaml(&args.config_path).with_context(|| {
+        format!(
+            "Failed to load configuration from: {}",
+            args.config_path.display()
+        )
+    })?;
+
     // Merge CLI arguments with config
-    config.merge_cli_args(args.audio_languages, args.subtitle_languages, args.dry_run)
+    config
+        .merge_cli_args(args.audio_languages, args.subtitle_languages, args.dry_run)
         .context("Failed to merge CLI arguments with configuration")?;
-    
+
     // Prompt for missing values if running interactively
-    config.prompt_missing_values()
+    config
+        .prompt_missing_values()
         .context("Failed to prompt for missing configuration values")?;
 
     // Collect Sonarr environment if available
@@ -143,11 +158,13 @@ pub async fn prepare_processing_settings() -> Result<ProcessingSettings> {
     })
 }
 
-
 pub fn print_configuration_info(config: &Config) {
     println!("\n⚙️  Configuration:");
     println!("🎵 Audio languages: {:?}", config.audio.keep_languages);
-    println!("📄 Subtitle languages: {:?}", config.subtitles.keep_languages);
+    println!(
+        "📄 Subtitle languages: {:?}",
+        config.subtitles.keep_languages
+    );
     if config.processing.dry_run {
         println!("🔍 Mode: Dry run (no files will be modified)");
     } else {

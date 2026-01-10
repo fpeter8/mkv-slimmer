@@ -2,7 +2,6 @@
 ///
 /// This module provides structured error types and consistent formatting
 /// to improve user experience when operations fail.
-
 use anyhow::Result;
 use std::path::Path;
 
@@ -85,11 +84,11 @@ pub fn enhance_error(result: Result<()>, operation: &str) -> Result<()> {
     result.map_err(|err| {
         let error_msg = err.to_string();
         let mut enhanced_msg = format!("❌ {}\n   Details: {}", operation, error_msg);
-        
+
         if let Some(suggestion) = suggest_solution(&error_msg) {
             enhanced_msg.push_str(&format!("\n   {}", suggestion));
         }
-        
+
         anyhow::anyhow!(enhanced_msg)
     })
 }

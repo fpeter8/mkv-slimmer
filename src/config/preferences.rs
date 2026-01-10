@@ -1,6 +1,6 @@
+use crate::error::config_error;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use crate::error::config_error;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SubtitlePreference {
@@ -15,31 +15,78 @@ impl SubtitlePreference {
         if let Some((lang, title)) = s.split_once(',') {
             let language = lang.trim().to_string();
             let title_prefix = title.trim().to_string();
-            
+
             if language.is_empty() {
                 return Err(config_error(
-                    "Subtitle language preference", 
-                    &format!("Language code cannot be empty in preference '{}'. Use format 'language' or 'language, title prefix'", s)
+                    "Subtitle language preference",
+                    &format!(
+                        "Language code cannot be empty in preference '{}'. Use format 'language' or 'language, title prefix'",
+                        s
+                    ),
                 ));
             }
-            
+
             // Empty title prefix is valid but treated as None
             let title_prefix = if title_prefix.is_empty() {
                 None
             } else {
                 Some(title_prefix)
             };
-            
-            Ok(Self { language, title_prefix })
+
+            Ok(Self {
+                language,
+                title_prefix,
+            })
         } else {
             let language = s.trim().to_string();
             if language.is_empty() {
                 return Err(config_error(
-                    "Subtitle language preference", 
-                    &format!("Language code cannot be empty in preference '{}'. Use format 'language' or 'language, title prefix'", s)
+                    "Subtitle language preference",
+                    &format!(
+                        "Language code cannot be empty in preference '{}'. Use format 'language' or 'language, title prefix'",
+                        s
+                    ),
                 ));
             }
-            Ok(Self { language, title_prefix: None })
+            Ok(Self {
+                language,
+                title_prefix: None,
+            })
+        }
+    }
+
+    /// Returns true if the given title matches this preference's title prefix requirement.
+    ///
+    /// Matching rules:
+    /// - If no title prefix is specified: always matches (returns true)
+    /// - If title prefix is specified but stream has no title: no match (returns false)
+    /// - If both exist: case-insensitive prefix matching
+    ///
+    /// # Examples
+    /// ```
+    /// use mkv_slimmer::config::SubtitlePreference;
+    ///
+    /// let pref = SubtitlePreference { language: "eng".to_string(), title_prefix: None };
+    /// assert!(pref.matches_title(Some("Any title")));
+    /// assert!(pref.matches_title(None));
+    ///
+    /// let pref = SubtitlePreference {
+    ///     language: "eng".to_string(),
+    ///     title_prefix: Some("Dialogue".to_string())
+    /// };
+    /// assert!(pref.matches_title(Some("Dialogue - Main")));
+    /// assert!(pref.matches_title(Some("dialogue for hearing")));
+    /// assert!(!pref.matches_title(Some("Signs")));
+    /// assert!(!pref.matches_title(None));
+    /// ```
+    pub fn matches_title(&self, stream_title: Option<&str>) -> bool {
+        match (&self.title_prefix, stream_title) {
+            (Some(prefix), Some(title)) => {
+                // Case-insensitive prefix matching
+                title.to_lowercase().starts_with(&prefix.to_lowercase())
+            }
+            (Some(_), None) => false, // Title required but not present
+            (None, _) => true,        // No title requirement
         }
     }
 }
@@ -59,12 +106,18 @@ impl Default for AudioConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubtitleConfig {
-    #[serde(serialize_with = "serialize_preferences", deserialize_with = "deserialize_preferences")]
+    #[serde(
+        serialize_with = "serialize_preferences",
+        deserialize_with = "deserialize_preferences"
+    )]
     pub keep_languages: Vec<SubtitlePreference>,
 }
 
 // Custom serialization to maintain backward compatibility
-fn serialize_preferences<S>(prefs: &Vec<SubtitlePreference>, serializer: S) -> Result<S::Ok, S::Error>
+fn serialize_preferences<S>(
+    prefs: &Vec<SubtitlePreference>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
@@ -96,8 +149,14 @@ impl Default for SubtitleConfig {
     fn default() -> Self {
         Self {
             keep_languages: vec![
-                SubtitlePreference { language: "eng".to_string(), title_prefix: None },
-                SubtitlePreference { language: "spa".to_string(), title_prefix: None },
+                SubtitlePreference {
+                    language: "eng".to_string(),
+                    title_prefix: None,
+                },
+                SubtitlePreference {
+                    language: "spa".to_string(),
+                    title_prefix: None,
+                },
             ],
         }
     }

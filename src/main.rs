@@ -1,25 +1,25 @@
 mod cli;
 mod config;
 mod core;
-mod models;
 mod display;
-mod utils;
 mod error;
+mod models;
+mod utils;
 
 use anyhow::{Context, Result};
 use std::path::Path;
 
-use cli::{prepare_processing_settings, ProcessingSettings, TargetType, print_configuration_info};
-use core::{BatchProcessor, process_task, handle_non_mkv_file};
+use cli::{ProcessingSettings, TargetType, prepare_processing_settings, print_configuration_info};
 use core::analyzer::analyze_mkv_streams;
+use core::{BatchProcessor, handle_non_mkv_file, process_task};
 use models::{ProcessingTask, StreamInfo};
-use utils::{validate_source_target_paths, is_valid_mkv_file};
+use utils::{is_valid_mkv_file, validate_source_target_paths};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     // Get processed settings from CLI
     let settings = prepare_processing_settings().await?;
-    
+
     if settings.input_is_file {
         // Process single file
         process_single_file(settings).await?;
@@ -36,9 +36,13 @@ async fn process_single_file(settings: ProcessingSettings) -> Result<()> {
     let (target_directory, output_filename) = match settings.target_type {
         TargetType::File => {
             // File → File: use parent directory and extract filename
-            let parent_dir = settings.target_path.parent()
+            let parent_dir = settings
+                .target_path
+                .parent()
                 .context("Could not determine parent directory from target file path")?;
-            let filename = settings.target_path.file_name()
+            let filename = settings
+                .target_path
+                .file_name()
                 .context("Could not extract filename from target path")?
                 .to_string_lossy()
                 .to_string();
@@ -49,9 +53,11 @@ async fn process_single_file(settings: ProcessingSettings) -> Result<()> {
             (settings.target_path.as_path(), None)
         }
     };
-    
+
     // Validate source and target paths are not nested within each other
-    let source_dir = settings.input_path.parent()
+    let source_dir = settings
+        .input_path
+        .parent()
         .context("Could not determine source directory")?;
     validate_source_target_paths(source_dir, target_directory)
         .context("Source and target path validation failed")?;
@@ -70,17 +76,21 @@ async fn process_single_file(settings: ProcessingSettings) -> Result<()> {
 
     // Check if file is valid MKV - if not, handle immediately
     if !is_valid_mkv_file(&settings.input_path) {
-        println!("⚠️  File is not a valid MKV file: {}", settings.input_path.display());
+        println!(
+            "⚠️  File is not a valid MKV file: {}",
+            settings.input_path.display()
+        );
         println!("🔄 Falling back to copying original file (no processing needed)");
-        
+
         handle_non_mkv_file(
             &settings.input_path,
             &target_directory.to_path_buf(),
             output_filename,
             &settings.config,
             settings.sonarr_context.as_ref(),
-        ).await?;
-        
+        )
+        .await?;
+
         return Ok(());
     }
 
@@ -89,10 +99,17 @@ async fn process_single_file(settings: ProcessingSettings) -> Result<()> {
         settings.input_path,
         target_directory.to_path_buf(),
         output_filename,
-    ).await?;
+    )
+    .await?;
 
     // Process the task
-    process_task(task, &settings.config, settings.sonarr_context.as_ref(), true).await
+    process_task(
+        task,
+        &settings.config,
+        settings.sonarr_context.as_ref(),
+        true,
+    )
+    .await
 }
 
 async fn process_directory(settings: ProcessingSettings) -> Result<()> {
@@ -136,9 +153,10 @@ async fn create_processing_task(
     output_filename: Option<String>,
 ) -> Result<ProcessingTask> {
     // Analyze streams using the new analyzer functions
-    let streams = analyze_mkv_streams_local(&source_file).await
+    let streams = analyze_mkv_streams_local(&source_file)
+        .await
         .with_context(|| format!("Failed to analyze MKV streams: {}", source_file.display()))?;
-    
+
     Ok(ProcessingTask::new(
         source_file,
         target_location,

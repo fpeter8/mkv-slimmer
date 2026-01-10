@@ -66,7 +66,7 @@ pub struct StreamInfo {
     pub size_bytes: Option<u64>,
     /// Duration of the stream in seconds
     pub duration_seconds: Option<f64>,
-    
+
     // Video-specific fields
     /// Video resolution as a string (e.g., "1920x1080")
     pub resolution: Option<String>,
@@ -74,7 +74,7 @@ pub struct StreamInfo {
     pub framerate: Option<f64>,
     /// Whether the video uses HDR color space
     pub hdr: Option<bool>,
-    
+
     // Audio-specific fields
     /// Number of audio channels
     pub channels: Option<u32>,
@@ -82,7 +82,7 @@ pub struct StreamInfo {
     pub sample_rate: Option<u32>,
     /// Audio bitrate in bits per second
     pub bitrate: Option<u64>,
-    
+
     // Subtitle-specific fields
     /// Subtitle format (e.g., "subrip", "ass", "vobsub")
     pub subtitle_format: Option<String>,
@@ -127,7 +127,7 @@ impl StreamInfo {
             subtitle_format: None,
         }
     }
-    
+
     /// Converts the stream size from bytes to megabytes
     ///
     /// Returns `None` if the size is not available for this stream.
@@ -141,6 +141,33 @@ impl StreamInfo {
     /// assert_eq!(stream.size_mb(), Some(1.0));
     /// ```
     pub fn size_mb(&self) -> Option<f64> {
-        self.size_bytes.map(|bytes| bytes as f64 / (1024.0 * 1024.0))
+        self.size_bytes
+            .map(|bytes| bytes as f64 / (1024.0 * 1024.0))
+    }
+
+    /// Returns the effective language for filtering purposes
+    ///
+    /// Streams without a language code (or with empty strings) are treated as "und" (undetermined).
+    /// This allows users to explicitly keep or filter undefined language streams
+    /// by including/excluding "und" in their language preferences.
+    ///
+    /// # Examples
+    /// ```rust
+    /// use mkv_slimmer::models::{StreamInfo, StreamType};
+    ///
+    /// let mut stream = StreamInfo::new(0, StreamType::Audio);
+    /// assert_eq!(stream.effective_language(), "und");
+    ///
+    /// stream.language = Some("eng".to_string());
+    /// assert_eq!(stream.effective_language(), "eng");
+    ///
+    /// stream.language = Some("".to_string());
+    /// assert_eq!(stream.effective_language(), "und");
+    /// ```
+    pub fn effective_language(&self) -> &str {
+        self.language
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or("und")
     }
 }

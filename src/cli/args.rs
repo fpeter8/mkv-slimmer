@@ -1,4 +1,4 @@
-use clap::{Arg, Command, ArgAction};
+use clap::{Arg, ArgAction, Command};
 use std::path::PathBuf;
 
 /// Creates the clap Command structure for CLI argument parsing
@@ -95,20 +95,23 @@ impl CliArgs {
     pub fn parse() -> anyhow::Result<Self> {
         let matches = create_app().get_matches();
 
-        let input_path = matches.get_one::<PathBuf>("input_path")
-            .ok_or_else(|| anyhow::anyhow!("Required input_path argument missing - clap configuration error"))?;
-        let target_path = matches.get_one::<PathBuf>("target_path")
-            .ok_or_else(|| anyhow::anyhow!("Required target_path argument missing - clap configuration error"))?;
-        let config_path = matches.get_one::<PathBuf>("config")
-            .ok_or_else(|| anyhow::anyhow!("Config argument with default value missing - clap configuration error"))?;
+        let input_path = matches.get_one::<PathBuf>("input_path").ok_or_else(|| {
+            anyhow::anyhow!("Required input_path argument missing - clap configuration error")
+        })?;
+        let target_path = matches.get_one::<PathBuf>("target_path").ok_or_else(|| {
+            anyhow::anyhow!("Required target_path argument missing - clap configuration error")
+        })?;
+        let config_path = matches.get_one::<PathBuf>("config").ok_or_else(|| {
+            anyhow::anyhow!("Config argument with default value missing - clap configuration error")
+        })?;
         let dry_run = matches.get_flag("dry_run");
         let recursive = matches.get_flag("recursive");
         let filter_pattern = matches.get_one::<String>("filter").map(|s| s.clone());
-        
+
         let audio_languages: Option<Vec<String>> = matches
             .get_many::<String>("audio_languages")
             .map(|values| values.cloned().collect());
-        
+
         let subtitle_languages: Option<Vec<String>> = matches
             .get_many::<String>("subtitle_languages")
             .map(|values| values.cloned().collect());

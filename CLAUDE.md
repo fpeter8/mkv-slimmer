@@ -18,6 +18,16 @@
 - Backward compatible with existing language-only configurations
 - Output display shows "title match" indicator when subtitle is kept due to title
 
+## Language Normalization
+
+- Streams with missing or empty language properties are treated as "und" (undetermined) for filtering
+- This allows users to explicitly control undefined language streams via configuration
+- Default audio configuration includes "und" as a fallback language
+- To keep streams without language tags, add "und" to your keep_languages list
+- To remove streams without language tags, exclude "und" from your configuration
+- The `effective_language()` method on StreamInfo encapsulates this normalization logic
+- Empty string language codes are also normalized to "und"
+
 ## Batch Processing
 
 - Supports both single file and directory processing modes

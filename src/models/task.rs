@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use anyhow::{Context, Result};
+use std::path::PathBuf;
 
 use super::stream::StreamInfo;
 
@@ -33,14 +33,15 @@ impl ProcessingTask {
         let output_path = match &self.output_filename {
             Some(filename) => self.target_location.join(filename),
             None => {
-                let original_name = self.source_file
+                let original_name = self
+                    .source_file
                     .file_name()
                     .context("Could not extract filename from source path")?
                     .to_string_lossy();
                 self.target_location.join(original_name.as_ref())
             }
         };
-        
+
         Ok(output_path)
     }
 
