@@ -5,6 +5,7 @@ use std::process::Command;
 
 use crate::config::Config;
 use crate::models::{FFProbeOutput, SonarrContext, StreamInfo, StreamType};
+use crate::utils::{SonarrMoveStatus, output_sonarr_move_status};
 
 // MkvAnalyzer struct removed - migrated to ProcessingTask pattern
 // See standalone functions below for the new implementation
@@ -145,8 +146,8 @@ pub async fn process_mkv_streams(
     println!("✅ Successfully processed: {}", output_path.display());
 
     // Handle Sonarr communication
-    if let Some(_sonarr) = sonarr_context {
-        println!("[MoveStatus] RenameRequested");
+    if sonarr_context.is_some() {
+        output_sonarr_move_status(SonarrMoveStatus::RenameRequested);
     }
 
     Ok(())
@@ -240,8 +241,8 @@ pub async fn handle_no_processing_needed_task(
     }
 
     // Handle Sonarr communication
-    if let Some(_) = sonarr_context {
-        println!("[MoveStatus] MoveComplete");
+    if sonarr_context.is_some() {
+        output_sonarr_move_status(SonarrMoveStatus::MoveComplete);
     }
 
     Ok(())
@@ -610,115 +611,80 @@ fn build_mkvmerge_command_for_task(
         &task.streams.iter().map(|s| s.index).collect::<Vec<_>>(),
     );
 
-    // Only specify track selection if we're filtering out some tracks
-    if streams_by_type.video.len() != all_streams_by_type.video.len() {
-        if streams_by_type.video.is_empty() {
-            cmd.arg("--no-video");
-        } else {
-            cmd.arg("--video-tracks");
-            cmd.arg(
-                streams_by_type
-                    .video
-                    .iter()
-                    .map(|i| i.to_string())
-                    .collect::<Vec<_>>()
-                    .join(","),
-            );
-        }
-    }
-
-    if streams_by_type.audio.len() != all_streams_by_type.audio.len() {
-        if streams_by_type.audio.is_empty() {
-            cmd.arg("--no-audio");
-        } else {
-            cmd.arg("--audio-tracks");
-            cmd.arg(
-                streams_by_type
-                    .audio
-                    .iter()
-                    .map(|i| i.to_string())
-                    .collect::<Vec<_>>()
-                    .join(","),
-            );
-        }
-    }
-
-    if streams_by_type.subtitle.len() != all_streams_by_type.subtitle.len() {
-        if streams_by_type.subtitle.is_empty() {
-            cmd.arg("--no-subtitles");
-        } else {
-            cmd.arg("--subtitle-tracks");
-            cmd.arg(
-                streams_by_type
-                    .subtitle
-                    .iter()
-                    .map(|i| i.to_string())
-                    .collect::<Vec<_>>()
-                    .join(","),
-            );
-        }
-    }
-
-    if streams_by_type.attachment.len() != all_streams_by_type.attachment.len() {
-        if streams_by_type.attachment.is_empty() {
-            cmd.arg("--no-attachments");
-        } else {
-            cmd.arg("--attachments");
-            cmd.arg(
-                streams_by_type
-                    .attachment
-                    .iter()
-                    .map(|i| i.to_string())
-                    .collect::<Vec<_>>()
-                    .join(","),
-            );
-        }
-    }
-
-    // Set default flags based on language preferences
-
-    // Default audio track - first matching language in preference order
-    if let Some(default_audio) =
-        get_default_audio_track(&task.streams, &streams_by_type.audio, config)
-    {
-        cmd.arg("--default-track-flag")
-            .arg(format!("{}:1", default_audio));
-
-        // Set all other audio tracks to non-default
-        for &track in &streams_by_type.audio {
-            if track != default_audio {
-                cmd.arg("--default-track-flag").arg(format!("{}:0", track));
-            }
-            cmd.arg("--forced-display-flag").arg(format!("{}:0", track));
-        }
-    }
-
-    // Default subtitle track - first matching language in preference order
-    if let Some(default_subtitle) =
-        get_default_subtitle_track(&task.streams, &streams_by_type.subtitle, config)
-    {
-        cmd.arg("--default-track-flag")
-            .arg(format!("{}:1", default_subtitle));
-
-        // Set all other subtitle tracks to non-default
-        for &track in &streams_by_type.subtitle {
-            if track != default_subtitle {
-                cmd.arg("--default-track-flag").arg(format!("{}:0", track));
-            }
-            cmd.arg("--forced-display-flag").arg(format!("{}:0", track));
-        }
-    } else {
-        // If no subtitle should be default, make sure all are set to non-default
-        for &track in &streams_by_type.subtitle {
-            cmd.arg("--default-track-flag").arg(format!("{}:0", track));
-            cmd.arg("--forced-display-flag").arg(format!("{}:0", track));
-        }
-    }
+    add_track_selection_args(&mut cmd, &streams_by_type, &all_streams_by_type);
+    add_default_track_flags(&mut cmd, task, &streams_by_type, config);
 
     // Input file
     cmd.arg(&task.source_file);
 
     Ok(cmd)
+}
+
+/// Add `--*-tracks` / `--no-*` selection args, but only for stream types where some
+/// tracks are being dropped. When every track of a type is kept, mkvmerge's default
+/// (include all) is left untouched.
+fn add_track_selection_args(cmd: &mut Command, kept: &StreamsByType, all: &StreamsByType) {
+    let selections = [
+        (&kept.video, &all.video, "--video-tracks", "--no-video"),
+        (&kept.audio, &all.audio, "--audio-tracks", "--no-audio"),
+        (
+            &kept.subtitle,
+            &all.subtitle,
+            "--subtitle-tracks",
+            "--no-subtitles",
+        ),
+        (
+            &kept.attachment,
+            &all.attachment,
+            "--attachments",
+            "--no-attachments",
+        ),
+    ];
+
+    for (kept_tracks, all_tracks, tracks_flag, no_flag) in selections {
+        if kept_tracks.len() == all_tracks.len() {
+            continue;
+        }
+        if kept_tracks.is_empty() {
+            cmd.arg(no_flag);
+        } else {
+            cmd.arg(tracks_flag);
+            cmd.arg(
+                kept_tracks
+                    .iter()
+                    .map(|i| i.to_string())
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+        }
+    }
+}
+
+/// Set default-track and forced-display flags so that at most one audio and one
+/// subtitle track are marked as default, based on language preferences.
+fn add_default_track_flags(
+    cmd: &mut Command,
+    task: &crate::models::ProcessingTask,
+    streams_by_type: &StreamsByType,
+    config: &Config,
+) {
+    let default_audio = get_default_audio_track(&task.streams, &streams_by_type.audio, config);
+    set_track_flags(cmd, &streams_by_type.audio, default_audio);
+
+    let default_subtitle =
+        get_default_subtitle_track(&task.streams, &streams_by_type.subtitle, config);
+    set_track_flags(cmd, &streams_by_type.subtitle, default_subtitle);
+}
+
+/// Emit `--default-track-flag` (1 only for `default_track`) and clear the forced
+/// display flag for every track in `tracks`.
+fn set_track_flags(cmd: &mut Command, tracks: &[u32], default_track: Option<u32>) {
+    for &track in tracks {
+        let is_default = if Some(track) == default_track { 1 } else { 0 };
+        cmd.arg("--default-track-flag")
+            .arg(format!("{}:{}", track, is_default));
+        cmd.arg("--forced-display-flag").arg(format!("{}:0", track));
+    }
 }
 
 fn get_default_audio_track(

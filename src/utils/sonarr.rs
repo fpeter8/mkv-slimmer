@@ -1,5 +1,21 @@
 use crate::models::SonarrContext;
 
+/// Move status reported back to Sonarr's import script via stdout.
+pub enum SonarrMoveStatus {
+    /// File was not modified and can be moved/hardlinked as-is.
+    MoveComplete,
+    /// File was modified (streams changed) and needs a rename from Sonarr.
+    RenameRequested,
+}
+
+/// Emit the Sonarr `[MoveStatus]` line that the import script parses from stdout.
+pub fn output_sonarr_move_status(status: SonarrMoveStatus) {
+    match status {
+        SonarrMoveStatus::MoveComplete => println!("[MoveStatus] MoveComplete"),
+        SonarrMoveStatus::RenameRequested => println!("[MoveStatus] RenameRequested"),
+    }
+}
+
 /// Collect Sonarr environment variables into a SonarrContext struct
 /// Performs case-insensitive matching for environment variable names
 pub fn collect_sonarr_environment() -> SonarrContext {

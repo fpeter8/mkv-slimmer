@@ -8,7 +8,15 @@
       "Bash(./target/debug/mkv-slimmer:*)",
       "Bash(git fetch:*)",
       "Bash(sed:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(rtk wc *)",
+      "Bash(rtk grep *)",
+      "Bash(rtk gh *)",
+      "Bash(awk 'NR>=595 && NR<=764' src/core/analyzer.rs)",
+      "Bash(awk -F: '$1>595')",
+      "Bash(rtk cargo build *)",
+      "Bash(rtk cargo fmt *)",
+      "Bash(rtk ls *)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits"
